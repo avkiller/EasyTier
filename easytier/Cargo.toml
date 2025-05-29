@@ -3,7 +3,7 @@ name = "easytier"
 description = "A full meshed p2p VPN, connecting all your devices in one network with one command."
 homepage = "https://github.com/EasyTier/EasyTier"
 repository = "https://github.com/EasyTier/EasyTier"
-version = "2.3.0"
+version = "2.3.1"
 edition = "2021"
 authors = ["kkrainbow"]
 keywords = ["vpn", "p2p", "network", "easytier"]
@@ -212,8 +212,6 @@ derive_builder = "0.20.2"
 humantime-serde = "1.1.1"
 multimap = "0.10.0"
 version-compare = "0.2.0"
-
-bounded_join_set = "0.3.0"
 
 jemallocator = { version = "0.5.4", optional = true }
 jemalloc-ctl = { version = "0.5.4", optional = true }

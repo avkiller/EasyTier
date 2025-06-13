@@ -18,6 +18,7 @@ advanced_settings: 高级设置
 basic_settings: 基础设置
 listener_urls: 监听地址
 rpc_port: RPC端口
+rpc_portal_whitelists: RPC白名单
 config_network: 配置网络
 running: 运行中
 error_msg: 错误信息
@@ -64,6 +65,7 @@ event_log: 事件日志
 peer_info: 节点信息
 hostname: 主机名
 route_cost: 路由
+tunnel_proto: 协议
 latency: 延迟
 upload_bytes: 上传
 download_bytes: 下载

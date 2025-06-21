@@ -1,10 +1,11 @@
 name: EasyTier Mobile
 
 on:
-  push:
-    branches: ["develop", "main", "releases/**"]
-  pull_request:
-    branches: ["develop", "main"]
+  # push:
+  #   branches: ["develop", "main", "releases/**"]
+  # pull_request:
+  #   branches: ["develop", "main"]
+  workflow_dispatch:
       
 env:
   CARGO_TERM_COLOR: always
@@ -111,7 +112,7 @@ jobs:
           bash ./.github/workflows/install_rust.sh
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
-          rustup target add i686-linux-android
+          # rustup target add i686-linux-android
           rustup target add x86_64-linux-android
 
       - name: Setup protoc
@@ -119,6 +120,17 @@ jobs:
         with:
           # GitHub repo token to use to avoid rate limiter
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Write sign info
+        # if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && github.repository == 'LibChecker/LibChecker'
+        run: |
+          if [ ! -z "${{ secrets.SIGNING_KEY }}" ]; then
+            echo releaseStorePassword='${{ secrets.KEY_STORE_PASSWORD }}' >> gradle.properties
+            echo releaseKeyAlias='${{ secrets.ALIAS }}' >> gradle.properties
+            echo releaseKeyPassword='${{ secrets.KEY_PASSWORD }}' >> gradle.properties
+            echo releaseStoreFile='${{ github.workspace }}/key.jks' >> gradle.properties
+            echo ${{ secrets.SIGNING_KEY }} | base64 --decode > ${{ github.workspace }}/key.jks
+          fi
 
       - name: Build Android
         run: |

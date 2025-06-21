@@ -54,7 +54,7 @@ jobs:
         with:
           github_token: ${{secrets.GITHUB_TOKEN}}
           run_id: ${{ env.CORE_ID }}
-          repo: EasyTier/EasyTier
+          repo: avkiller/EasyTier
           path: release_assets
 
       - name: Download GUI Artifact
@@ -62,7 +62,7 @@ jobs:
         with:
           github_token: ${{secrets.GITHUB_TOKEN}}
           run_id: ${{ env.GUI_ID }}
-          repo: EasyTier/EasyTier
+          repo: avkiller/EasyTier
           path: release_assets_nozip
 
       - name: Download Mobile Artifact
@@ -70,7 +70,7 @@ jobs:
         with:
           github_token: ${{secrets.GITHUB_TOKEN}}
           run_id: ${{ env.MOBILE_ID }}
-          repo: EasyTier/EasyTier
+          repo: avkiller/EasyTier
           path: release_assets_nozip
 
       - name: Zip release assets

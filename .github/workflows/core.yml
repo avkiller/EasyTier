@@ -164,8 +164,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Core & Cli
-        if: false
-        # if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
+        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
         run: |
           bash ./.github/workflows/install_rust.sh
 

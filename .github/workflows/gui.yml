@@ -1,10 +1,11 @@
 name: EasyTier GUI
 
 on:
-  push:
-    branches: ["develop", "main", "releases/**"]
-  pull_request:
-    branches: ["develop", "main"]
+  # push:
+  #   branches: ["develop", "main", "releases/**"]
+  # pull_request:
+  #   branches: ["develop", "main"]
+  workflow_dispatch:
       
 env:
   CARGO_TERM_COLOR: always
@@ -63,10 +64,10 @@ jobs:
             GUI_TARGET: aarch64-pc-windows-msvc
             ARTIFACT_NAME: windows-arm64
 
-          - TARGET: i686-pc-windows-msvc
-            OS: windows-latest
-            GUI_TARGET: i686-pc-windows-msvc
-            ARTIFACT_NAME: windows-i686
+          # - TARGET: i686-pc-windows-msvc
+          #   OS: windows-latest
+          #   GUI_TARGET: i686-pc-windows-msvc
+          #   ARTIFACT_NAME: windows-i686
 
     runs-on: ${{ matrix.OS }}
     env:

@@ -122,17 +122,22 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Write sign info
-        # if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && github.repository == 'LibChecker/LibChecker'
+        env:
+          releaseStorePassword: '${{ secrets.KEY_STORE_PASSWORD }}'
+          releaseKeyAlias: '${{ secrets.ALIAS }}'
+          releaseKeyPassword: '${{ secrets.KEY_PASSWORD }}'
+          releaseStoreFile: '${{ github.workspace }}/key.jks'
         run: |
           if [ ! -z "${{ secrets.SIGNING_KEY }}" ]; then
-            echo releaseStorePassword='${{ secrets.KEY_STORE_PASSWORD }}' >> gradle.properties
-            echo releaseKeyAlias='${{ secrets.ALIAS }}' >> gradle.properties
-            echo releaseKeyPassword='${{ secrets.KEY_PASSWORD }}' >> gradle.properties
-            echo releaseStoreFile='${{ github.workspace }}/key.jks' >> gradle.properties
+            #echo releaseStorePassword='${{ secrets.KEY_STORE_PASSWORD }}' >> gradle.properties
+            #echo releaseKeyAlias='${{ secrets.ALIA'${{ secrets.KS }}' >> gradle.properties
+            #echo releaseKeyPassword='${{ secrets.KEY_PASSWORD }}' >> gradle.properties
+            #echo releaseStoreFile='${{ github.workspace }}/key.jks' >> gradle.properties
             echo ${{ secrets.SIGNING_KEY }} | base64 --decode > ${{ github.workspace }}/key.jks
           fi
 
       - name: Build Android
+       
         run: |
           cd easytier-gui
           pnpm tauri android build

@@ -1,0 +1,107 @@
+name: EasyTier Release by fireworld
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for this release'
+        type: string
+        default: 'v2.3.2'
+        required: true
+      make_latest:
+        description: 'Mark this release as latest'
+        type: boolean
+        default: true
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # if: contains('["KKRainbow"]', github.actor)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Query workflow runs via API
+        run: |
+
+          CORE_FILE="core.yml"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$CORE_FILE/runs?status=success&per_page=3")
+          echo "Core Previous successful run IDs:"
+          core_run_id=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
+          echo "CORE_ID=$core_run_id" >> $GITHUB_ENV
+
+          GUI_FILE="gui.yml"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$GUI_FILE/runs?status=success&per_page=3")
+          echo "GUI Previous successful run IDs:"
+          gui_run_id=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
+          echo "GUI_ID=$gui_run_id" >> $GITHUB_ENV
+
+          MOBILE_FILE="mobile.yml"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$MOBILE_FILE/runs?status=success&per_page=3")
+          echo "MOBILE Previous successful run IDs:"
+          mobile_run_id=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
+          echo "MOBILE_ID=$mobile_run_id" >> $GITHUB_ENV
+
+      - name: Download Core Artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          run_id: ${{ env.CORE_ID }}
+          repo: EasyTier/EasyTier
+          path: release_assets
+
+      - name: Download GUI Artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          run_id: ${{ env.GUI_ID }}
+          repo: EasyTier/EasyTier
+          path: release_assets_nozip
+
+      - name: Download Mobile Artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          run_id: ${{ env.MOBILE_ID }}
+          repo: EasyTier/EasyTier
+          path: release_assets_nozip
+
+      - name: Zip release assets
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir zipped_assets
+
+          find release_assets_nozip -type f -exec mv {} zipped_assets \;
+          ls -l -R ./zipped_assets
+
+          cd release_assets
+          ls -l -R ./
+          chmod -R 755 .
+          for x in `ls`; do
+            if [ "$x" = "Easytier-Magisk" ]; then
+              # for Easytier-Magisk, make sure files are in the root of the zip
+              cd $x;
+              zip -r ../../zipped_assets/$x-${VERSION}.zip .;
+              cd ..;
+            else
+              zip -r ../zipped_assets/$x-${VERSION}.zip $x;
+            fi
+          done
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ inputs.version }}
+          draft: true
+          files: |
+            ./zipped_assets/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ inputs.version }}

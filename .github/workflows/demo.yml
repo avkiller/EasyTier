@@ -8,13 +8,34 @@ jobs:
     steps:
       - name: Query workflow runs via API
         run: |
-          # 替换为你的工作流文件名（如 .github/workflows/main.yml）
-          WORKFLOW_FILE="core.yml"
-          
-          # 调用 API 获取最近 3 次成功的运行记录
+
+          CORE_FILE="core.yml"
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$WORKFLOW_FILE/runs?status=success&per_page=3")
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$CORE_FILE/runs?status=success&per_page=3")
+          echo "Core Previous successful run IDs:"
+          core_run_id=echo "$RESPONSE" | jq -r '.workflow_runs[].id'
+          echo "CORE_ID=$core_run_id" >> $GITHUB_ENV
+
+          GUI_FILE="gui.yml"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$GUI_FILE/runs?status=success&per_page=3")
+          echo "GUI Previous successful run IDs:"
+          gui_run_id=echo "$RESPONSE" | jq -r '.workflow_runs[].id'
+          echo "GUI_ID=$gui_run_id" >> $GITHUB_ENV
+
+          MOBILE_FILE="mobile.yml"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$MOBILE_FILE/runs?status=success&per_page=3")
+          echo "MOBILE Previous successful run IDs:"
+          mobile_run_id=echo "$RESPONSE" | jq -r '.workflow_runs[].id'
+          echo "MOBILE_ID=$mobile_run_id" >> $GITHUB_ENV
+
+      - name: print_id
+        run: |
+          echo "core" 
+          echo env.CORE_ID
+          echo "gui" 
+          echo env.GUI_ID
+          echo "mobile" 
+          echo env.MOBILE_ID
           
-          # 解析并输出 run_id
-          echo "Previous successful run IDs:"
-          echo "$RESPONSE" | jq -r '.workflow_runs[].id'

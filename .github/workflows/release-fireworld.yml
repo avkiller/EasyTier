@@ -30,21 +30,21 @@ jobs:
 
           CORE_FILE="core.yml"
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$CORE_FILE/runs?status=success&per_page=3")
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$CORE_FILE/runs?status=success&per_page=1")
           core_run_id=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
           echo "Core Previous successful run IDs: $core_run_id"
           echo "CORE_ID=$core_run_id" >> $GITHUB_ENV
 
           GUI_FILE="gui.yml"
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$GUI_FILE/runs?status=success&per_page=3")
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$GUI_FILE/runs?status=success&per_page=1")
           gui_run_id=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
           echo "GUI Previous successful run IDs: $gui_run_id"
           echo "GUI_ID=$gui_run_id" >> $GITHUB_ENV
 
           MOBILE_FILE="mobile.yml"
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$MOBILE_FILE/runs?status=success&per_page=3")
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$MOBILE_FILE/runs?status=success&per_page=1")
           mobile_run_id=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
           echo "MOBILE Previous successful run IDs: $mobile_run_id"
           echo "MOBILE_ID=$mobile_run_id" >> $GITHUB_ENV

@@ -2049,8 +2049,10 @@ dependencies = [
  "version-compare",
  "which 7.0.3",
  "wildmatch",
+ "winapi",
  "windows 0.52.0",
  "windows-service",
+ "windows-sys 0.52.0",
  "winreg 0.52.0",
  "zerocopy",
  "zip",
@@ -2078,9 +2080,9 @@ dependencies = [
  "dashmap",
  "dunce",
  "easytier",
+ "elevated-command",
  "gethostname 0.5.0",
  "once_cell",
- "privilege",
  "serde",
  "serde_json",
  "tauri",
@@ -2164,6 +2166,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "elevated-command"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54c410eccdcc5b759704fdb6a792afe6b01ab8a062e2c003ff2567e2697a94aa"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "libc",
+ "log",
+ "winapi",
+ "windows 0.52.0",
 ]
 
 [[package]]
@@ -4118,7 +4134,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -5828,18 +5844,6 @@ checksum = "5f12335488a2f3b0a83b14edad48dca9879ce89b2edd10e80237e4e852dd645e"
 dependencies = [
  "proc-macro2",
  "syn 2.0.87",
-]
-
-[[package]]
-name = "privilege"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "765ec92721e112ffe07f5c06fb0654da0b708990888981d05cf12a7c9909df30"
-dependencies = [
- "libc",
- "security-framework-sys",
- "which 4.4.2",
- "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8503,8 +8507,8 @@ dependencies = [
 
 [[package]]
 name = "thunk-rs"
-version = "0.3.3"
-source = "git+https://github.com/easytier/thunk.git#5e8371a3100dbc18dda952a2036c6bd6fb0504db"
+version = "0.3.4"
+source = "git+https://github.com/easytier/thunk.git#403f0d26d3d5bcfdfd76c23e36e517f19fe891e0"
 
 [[package]]
 name = "tiff"
@@ -9062,8 +9066,7 @@ checksum = "7b3e06c9b9d80ed6b745c7159c40b311ad2916abb34a49e9be2653b90db0d8dd"
 [[package]]
 name = "tun-easytier"
 version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10dff0358b37ef593a74c9d2264a1df126e169d194878732a4f99ff7b01678bd"
+source = "git+https://github.com/EasyTier/rust-tun#12378839e7985283df0e4fb536b7137230356db5"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -9696,7 +9699,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

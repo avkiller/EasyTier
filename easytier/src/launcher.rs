@@ -94,7 +94,7 @@ impl EasyTierLauncher {
         }
     }
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     async fn run_routine_for_android(
         instance: &Instance,
         data: &EasyTierData,
@@ -199,7 +199,7 @@ impl EasyTierLauncher {
             });
         }
 
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_env = "ohos"))]
         Self::run_routine_for_android(&instance, &data, &mut tasks).await;
 
         instance.run().await?;
@@ -483,7 +483,7 @@ pub fn add_proxy_network_to_config(
     } else {
         None
     };
-    cfg.add_proxy_cidr(real_cidr, mapped_cidr);
+    cfg.add_proxy_cidr(real_cidr, mapped_cidr)?;
     Ok(())
 }
 
@@ -1003,7 +1003,7 @@ mod tests {
                     } else {
                         None
                     };
-                    config.add_proxy_cidr(network, mapped_network);
+                    config.add_proxy_cidr(network, mapped_network).unwrap();
                 }
             }
 

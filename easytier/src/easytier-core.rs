@@ -12,8 +12,9 @@ use std::{
 
 use anyhow::Context;
 use cidr::IpCidr;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
+use clap_complete::Shell;
 use easytier::{
     common::{
         config::{
@@ -44,7 +45,7 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL_MIMALLOC: MiMalloc = MiMalloc;
 
-#[cfg(feature = "jemalloc")]
+#[cfg(feature = "jemalloc-prof")]
 use jemalloc_ctl::{epoch, stats, Access as _, AsName as _};
 
 #[cfg(feature = "jemalloc")]
@@ -52,7 +53,7 @@ use jemalloc_ctl::{epoch, stats, Access as _, AsName as _};
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn set_prof_active(_active: bool) {
-    #[cfg(feature = "jemalloc")]
+    #[cfg(feature = "jemalloc-prof")]
     {
         const PROF_ACTIVE: &'static [u8] = b"prof.active\0";
         let name = PROF_ACTIVE.name();
@@ -61,7 +62,7 @@ fn set_prof_active(_active: bool) {
 }
 
 fn dump_profile(_cur_allocated: usize) {
-    #[cfg(feature = "jemalloc")]
+    #[cfg(feature = "jemalloc-prof")]
     {
         const PROF_DUMP: &'static [u8] = b"prof.dump\0";
         static mut PROF_DUMP_FILE_NAME: [u8; 128] = [0; 128];
@@ -122,6 +123,9 @@ struct Cli {
 
     #[command(flatten)]
     logging_options: LoggingOptions,
+
+    #[clap(long, help = t!("core_clap.generate_completions").to_string())]
+    gen_autocomplete: Option<Shell>,
 }
 
 #[derive(Parser, Debug)]
@@ -810,7 +814,6 @@ impl NetworkOptions {
         if let Some(dev_name) = &self.dev_name {
             f.dev_name = dev_name.clone()
         }
-        println!("mtu: {}, {:?}", f.mtu, self.mtu);
         if let Some(mtu) = self.mtu {
             f.mtu = mtu as u32;
         }
@@ -1093,7 +1096,7 @@ async fn run_main(cli: Cli) -> anyhow::Result<()> {
 }
 
 fn memory_monitor() {
-    #[cfg(feature = "jemalloc")]
+    #[cfg(feature = "jemalloc-prof")]
     {
         let mut last_peak_size = 0;
         let e = epoch::mib().unwrap();
@@ -1158,6 +1161,11 @@ async fn main() -> ExitCode {
     let _monitor = std::thread::spawn(memory_monitor);
 
     let cli = Cli::parse();
+    if let Some(shell) = cli.gen_autocomplete {
+        let mut cmd = Cli::command();
+        easytier::print_completions(shell, &mut cmd, "easytier-core");
+        return ExitCode::SUCCESS;
+    }
     let mut ret_code = 0;
 
     if let Err(e) = run_main(cli).await {

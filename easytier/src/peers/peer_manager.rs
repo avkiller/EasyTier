@@ -1,14 +1,14 @@
 use std::{
     fmt::Debug,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::{Arc, Weak},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::{atomic::AtomicBool, Arc, Weak},
     time::{Instant, SystemTime},
 };
 
 use anyhow::Context;
 use async_trait::async_trait;
 
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 
 use tokio::{
     sync::{
@@ -143,6 +143,8 @@ pub struct PeerManager {
     exit_nodes: Vec<Ipv4Addr>,
 
     reserved_my_peer_id_map: DashMap<String, PeerId>,
+
+    allow_loopback_tunnel: AtomicBool,
 }
 
 impl Debug for PeerManager {
@@ -271,7 +273,14 @@ impl PeerManager {
             exit_nodes,
 
             reserved_my_peer_id_map: DashMap::new(),
+
+            allow_loopback_tunnel: AtomicBool::new(true),
         }
+    }
+
+    pub fn set_allow_loopback_tunnel(&self, allow_loopback_tunnel: bool) {
+        self.allow_loopback_tunnel
+            .store(allow_loopback_tunnel, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn build_foreign_network_manager_accessor(
@@ -356,6 +365,65 @@ impl PeerManager {
         self.add_client_tunnel(t, true).await
     }
 
+    // avoid loop back to virtual network
+    fn check_remote_addr_not_from_virtual_network(
+        &self,
+        tunnel: &dyn Tunnel,
+    ) -> Result<(), anyhow::Error> {
+        tracing::info!("check remote addr not from virtual network");
+        let Some(tunnel_info) = tunnel.info() else {
+            anyhow::bail!("tunnel info is not set");
+        };
+        let Some(src) = tunnel_info.remote_addr.map(url::Url::from) else {
+            anyhow::bail!("tunnel info remote addr is not set");
+        };
+        if src.scheme() == "ring" {
+            return Ok(());
+        }
+        let src_host = match src.socket_addrs(|| Some(1)) {
+            Ok(addrs) => addrs,
+            Err(_) => {
+                // if the tunnel is not rely on ip address, skip check
+                return Ok(());
+            }
+        };
+        let virtual_ipv4 = self.global_ctx.get_ipv4().map(|ip| ip.network());
+        let virtual_ipv6 = self.global_ctx.get_ipv6().map(|ip| ip.network());
+        tracing::info!(
+            ?virtual_ipv4,
+            ?virtual_ipv6,
+            "check remote addr not from virtual network"
+        );
+        for addr in src_host {
+            // if no-tun is enabled, the src ip of packet in virtual network is converted to loopback address
+            if addr.ip().is_loopback()
+                && !self
+                    .allow_loopback_tunnel
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                anyhow::bail!("tunnel src host is loopback address");
+            }
+
+            match addr {
+                SocketAddr::V4(addr) => {
+                    if let Some(virtual_ipv4) = virtual_ipv4 {
+                        if virtual_ipv4.contains(&addr.ip()) {
+                            anyhow::bail!("tunnel src host is from the virtual network (ignore this error please)");
+                        }
+                    }
+                }
+                SocketAddr::V6(addr) => {
+                    if let Some(virtual_ipv6) = virtual_ipv6 {
+                        if virtual_ipv6.contains(&addr.ip()) {
+                            anyhow::bail!("tunnel src host is from the virtual network (ignore this error please)");
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(ret)]
     pub async fn add_tunnel_as_server(
         &self,
@@ -363,6 +431,8 @@ impl PeerManager {
         is_directly_connected: bool,
     ) -> Result<(), Error> {
         tracing::info!("add tunnel as server start");
+        self.check_remote_addr_not_from_virtual_network(&tunnel)?;
+
         let mut conn = PeerConn::new(self.my_peer_id, self.global_ctx.clone(), tunnel);
         conn.do_handshake_as_server_ext(|peer, msg| {
             if msg.network_name
@@ -1112,14 +1182,6 @@ impl PeerManager {
         while !self.tasks.lock().await.is_empty() {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
-    }
-
-    pub fn get_directly_connections(&self, peer_id: PeerId) -> DashSet<uuid::Uuid> {
-        if let Some(peer) = self.peers.get_peer_by_id(peer_id) {
-            return peer.get_directly_connections();
-        }
-
-        DashSet::new()
     }
 
     pub async fn clear_resources(&self) {

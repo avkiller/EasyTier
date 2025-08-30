@@ -10,6 +10,7 @@ use tracing::Instrument;
 
 use crate::{set_global_var, use_global_var};
 
+pub mod acl_processor;
 pub mod compressor;
 pub mod config;
 pub mod constants;
@@ -21,6 +22,7 @@ pub mod ifcfg;
 pub mod netns;
 pub mod network;
 pub mod scoped_task;
+pub mod stats_manager;
 pub mod stun;
 pub mod stun_codec_ext;
 pub mod token_bucket;
@@ -138,8 +140,8 @@ pub fn get_machine_id() -> uuid::Uuid {
     )))]
     let gen_mid = None;
 
-    if gen_mid.is_some() {
-        return gen_mid.unwrap();
+    if let Some(mid) = gen_mid {
+        return mid;
     }
 
     let gen_mid = uuid::Uuid::new_v4();

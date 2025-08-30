@@ -1,4 +1,7 @@
-use std::{fmt, str::FromStr};
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+};
 
 use anyhow::Context;
 
@@ -35,13 +38,13 @@ impl From<String> for Uuid {
 
 impl fmt::Display for Uuid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", uuid::Uuid::from(self.clone()))
+        write!(f, "{}", uuid::Uuid::from(*self))
     }
 }
 
 impl fmt::Debug for Uuid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", uuid::Uuid::from(self.clone()))
+        write!(f, "{}", uuid::Uuid::from(*self))
     }
 }
 
@@ -59,9 +62,9 @@ impl From<Ipv4Addr> for std::net::Ipv4Addr {
     }
 }
 
-impl ToString for Ipv4Addr {
-    fn to_string(&self) -> String {
-        std::net::Ipv4Addr::from(self.addr).to_string()
+impl Display for Ipv4Addr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", std::net::Ipv4Addr::from(self.addr))
     }
 }
 
@@ -90,9 +93,9 @@ impl From<Ipv6Addr> for std::net::Ipv6Addr {
     }
 }
 
-impl ToString for Ipv6Addr {
-    fn to_string(&self) -> String {
-        std::net::Ipv6Addr::from(self.clone()).to_string()
+impl Display for Ipv6Addr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", std::net::Ipv6Addr::from(*self))
     }
 }
 
@@ -117,7 +120,7 @@ impl From<Ipv4Inet> for cidr::Ipv4Inet {
 
 impl fmt::Display for Ipv4Inet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", cidr::Ipv4Inet::from(self.clone()))
+        write!(f, "{}", cidr::Ipv4Inet::from(*self))
     }
 }
 
@@ -152,7 +155,7 @@ impl From<Ipv6Inet> for cidr::Ipv6Inet {
 
 impl fmt::Display for Ipv6Inet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", cidr::Ipv6Inet::from(self.clone()))
+        write!(f, "{}", cidr::Ipv6Inet::from(*self))
     }
 }
 
@@ -163,6 +166,43 @@ impl FromStr for Ipv6Inet {
         Ok(Ipv6Inet::from(
             cidr::Ipv6Inet::from_str(s).with_context(|| "Failed to parse Ipv6Inet")?,
         ))
+    }
+}
+
+impl From<cidr::IpInet> for IpInet {
+    fn from(value: cidr::IpInet) -> Self {
+        match value {
+            cidr::IpInet::V4(v4) => IpInet {
+                ip: Some(ip_inet::Ip::Ipv4(Ipv4Inet::from(v4))),
+            },
+            cidr::IpInet::V6(v6) => IpInet {
+                ip: Some(ip_inet::Ip::Ipv6(Ipv6Inet::from(v6))),
+            },
+        }
+    }
+}
+
+impl From<IpInet> for cidr::IpInet {
+    fn from(value: IpInet) -> Self {
+        match value.ip {
+            Some(ip_inet::Ip::Ipv4(v4)) => cidr::IpInet::V4(v4.into()),
+            Some(ip_inet::Ip::Ipv6(v6)) => cidr::IpInet::V6(v6.into()),
+            None => panic!("IpInet is None"),
+        }
+    }
+}
+
+impl Display for IpInet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", cidr::IpInet::from(*self))
+    }
+}
+
+impl FromStr for IpInet {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(IpInet::from(cidr::IpInet::from_str(s)?))
     }
 }
 
@@ -200,11 +240,11 @@ impl From<std::net::SocketAddr> for SocketAddr {
     fn from(value: std::net::SocketAddr) -> Self {
         match value {
             std::net::SocketAddr::V4(v4) => SocketAddr {
-                ip: Some(socket_addr::Ip::Ipv4(v4.ip().clone().into())),
+                ip: Some(socket_addr::Ip::Ipv4((*v4.ip()).into())),
                 port: v4.port() as u32,
             },
             std::net::SocketAddr::V6(v6) => SocketAddr {
-                ip: Some(socket_addr::Ip::Ipv6(v6.ip().clone().into())),
+                ip: Some(socket_addr::Ip::Ipv6((*v6.ip()).into())),
                 port: v6.port() as u32,
             },
         }
@@ -231,9 +271,9 @@ impl From<SocketAddr> for std::net::SocketAddr {
     }
 }
 
-impl ToString for SocketAddr {
-    fn to_string(&self) -> String {
-        std::net::SocketAddr::from(self.clone()).to_string()
+impl Display for SocketAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", std::net::SocketAddr::from(*self))
     }
 }
 
@@ -262,14 +302,14 @@ impl TryFrom<CompressorAlgo> for CompressionAlgoPb {
 
 impl fmt::Debug for Ipv4Addr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let std_ipv4_addr = std::net::Ipv4Addr::from(self.clone());
+        let std_ipv4_addr = std::net::Ipv4Addr::from(*self);
         write!(f, "{}", std_ipv4_addr)
     }
 }
 
 impl fmt::Debug for Ipv6Addr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let std_ipv6_addr = std::net::Ipv6Addr::from(self.clone());
+        let std_ipv6_addr = std::net::Ipv6Addr::from(*self);
         write!(f, "{}", std_ipv6_addr)
     }
 }

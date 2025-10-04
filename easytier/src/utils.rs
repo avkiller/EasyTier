@@ -10,7 +10,7 @@ use crate::common::{
     config::LoggingConfigLoader, get_logger_timer_rfc3339, tracing_rolling_appender::*,
 };
 
-pub type PeerRoutePair = crate::proto::cli::PeerRoutePair;
+pub type PeerRoutePair = crate::proto::api::instance::PeerRoutePair;
 
 pub fn cost_to_str(cost: i32) -> String {
     if cost == 1 {
@@ -30,7 +30,7 @@ pub fn init_logger(
     config: impl LoggingConfigLoader,
     need_reload: bool,
 ) -> Result<Option<NewFilterSender>, anyhow::Error> {
-    use crate::instance::logger_rpc_service::{CURRENT_LOG_LEVEL, LOGGER_LEVEL_SENDER};
+    use crate::rpc_service::logger::{CURRENT_LOG_LEVEL, LOGGER_LEVEL_SENDER};
 
     let file_config = config.get_file_logger_config();
     let file_level = file_config
@@ -81,9 +81,14 @@ pub fn init_logger(
             });
         }
 
+        let dir = file_config.dir.as_deref().unwrap_or(".");
+        let file = file_config.file.as_deref().unwrap_or("easytier.log");
+        let path = std::path::Path::new(dir).join(file);
+        let path_str = path.to_string_lossy().into_owned();
+
         let builder = RollingFileAppenderBase::builder();
         let file_appender = builder
-            .filename(file_config.file.unwrap_or("easytier.log".to_string()))
+            .filename(path_str)
             .condition_daily()
             .max_filecount(file_config.count.unwrap_or(10))
             .condition_max_file_size(file_config.size_mb.unwrap_or(100) * 1024 * 1024)
@@ -247,6 +252,11 @@ pub fn check_tcp_available(port: u16) -> bool {
 
 pub fn find_free_tcp_port(mut range: std::ops::Range<u16>) -> Option<u16> {
     range.find(|&port| check_tcp_available(port))
+}
+
+pub fn weak_upgrade<T>(weak: &std::sync::Weak<T>) -> anyhow::Result<std::sync::Arc<T>> {
+    weak.upgrade()
+        .ok_or_else(|| anyhow::anyhow!("{} not available", std::any::type_name::<T>()))
 }
 
 #[cfg(test)]

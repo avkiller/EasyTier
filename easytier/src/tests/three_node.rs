@@ -18,7 +18,7 @@ use crate::{
         stats_manager::{LabelType, MetricName},
     },
     instance::instance::Instance,
-    proto::{cli::TcpProxyEntryTransportType, common::CompressionAlgoPb},
+    proto::{api::instance::TcpProxyEntryTransportType, common::CompressionAlgoPb},
     tunnel::{
         common::tests::{_tunnel_bench_netns, wait_for_condition},
         ring::RingTunnelConnector,
@@ -40,10 +40,10 @@ pub fn prepare_linux_namespaces() {
     del_netns("net_c");
     del_netns("net_d");
 
-    create_netns("net_a", "10.1.1.1/24");
-    create_netns("net_b", "10.1.1.2/24");
-    create_netns("net_c", "10.1.2.3/24");
-    create_netns("net_d", "10.1.2.4/24");
+    create_netns("net_a", "10.1.1.1/24", "fd11::1/64");
+    create_netns("net_b", "10.1.1.2/24", "fd11::2/64");
+    create_netns("net_c", "10.1.2.3/24", "fd12::3/64");
+    create_netns("net_d", "10.1.2.4/24", "fd12::4/64");
 
     prepare_bridge("br_a");
     prepare_bridge("br_b");
@@ -931,10 +931,18 @@ fn run_wireguard_client(
 }
 
 #[cfg(feature = "wireguard")]
+#[rstest::rstest]
 #[tokio::test]
 #[serial_test::serial]
-pub async fn wireguard_vpn_portal() {
+pub async fn wireguard_vpn_portal(#[values(true, false)] test_v6: bool) {
     let mut insts = init_three_node("tcp").await;
+
+    if test_v6 {
+        ping6_test("net_d", "fd12::3", None).await;
+    } else {
+        ping_test("net_d", "10.1.2.3", None).await;
+    }
+
     let net_ns = NetNS::new(Some("net_d".into()));
     let _g = net_ns.guard();
     insts[2]
@@ -946,11 +954,17 @@ pub async fn wireguard_vpn_portal() {
         });
     insts[2].run_vpn_portal().await.unwrap();
 
+    let dst_socket_addr = if test_v6 {
+        "[fd12::3]:22121".parse().unwrap()
+    } else {
+        "10.1.2.3:22121".parse().unwrap()
+    };
+
     let net_ns = NetNS::new(Some("net_d".into()));
     let _g = net_ns.guard();
     let wg_cfg = get_wg_config_for_portal(&insts[2].get_global_ctx().get_network_identity());
     run_wireguard_client(
-        "10.1.2.3:22121".parse().unwrap(),
+        dst_socket_addr,
         Key::try_from(wg_cfg.my_public_key()).unwrap(),
         Key::try_from(wg_cfg.peer_secret_key()).unwrap(),
         vec!["10.14.14.0/24".to_string(), "10.144.144.0/24".to_string()],
@@ -2077,6 +2091,101 @@ pub async fn acl_group_based_test(
     println!("ACL stats after group {} tests: {:?}", protocol, stats);
 
     println!("✓ All group-based ACL tests completed successfully");
+
+    drop_insts(insts).await;
+}
+
+#[rstest::rstest]
+#[tokio::test]
+#[serial_test::serial]
+pub async fn config_patch_test() {
+    use crate::proto::{
+        api::config::{
+            ConfigPatchAction, InstanceConfigPatch, PortForwardPatch, ProxyNetworkPatch,
+        },
+        common::{PortForwardConfigPb, SocketType},
+    };
+    use crate::tunnel::common::tests::_tunnel_pingpong_netns_with_timeout;
+
+    let insts = init_three_node("udp").await;
+
+    check_route(
+        "10.144.144.2/24",
+        insts[1].peer_id(),
+        insts[0].get_peer_manager().list_routes().await,
+    );
+
+    check_route(
+        "10.144.144.3/24",
+        insts[2].peer_id(),
+        insts[0].get_peer_manager().list_routes().await,
+    );
+
+    // 测试1： 修改hostname、ip、子网代理
+    let patch = InstanceConfigPatch {
+        hostname: Some("new_inst1".to_string()),
+        ipv4: Some("10.144.144.22/24".parse().unwrap()),
+        proxy_networks: vec![ProxyNetworkPatch {
+            action: ConfigPatchAction::Add as i32,
+            cidr: Some("10.144.145.0/24".parse().unwrap()),
+            mapped_cidr: None,
+        }],
+        ..Default::default()
+    };
+    insts[1]
+        .get_config_patcher()
+        .apply_patch(patch)
+        .await
+        .unwrap();
+    assert_eq!(insts[1].get_global_ctx().get_hostname(), "new_inst1");
+    assert_eq!(
+        insts[1].get_global_ctx().get_ipv4().unwrap(),
+        "10.144.144.22/24".parse().unwrap()
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    check_route_ex(
+        insts[0].get_peer_manager().list_routes().await,
+        insts[1].peer_id(),
+        |r| {
+            assert_eq!(r.hostname, "new_inst1");
+            assert_eq!(r.ipv4_addr, Some("10.144.144.22/24".parse().unwrap()));
+            assert_eq!(r.proxy_cidrs[0], "10.144.145.0/24");
+            true
+        },
+    );
+
+    // 测试2: 端口转发
+    let patch = InstanceConfigPatch {
+        port_forwards: vec![PortForwardPatch {
+            action: ConfigPatchAction::Add as i32,
+            cfg: Some(PortForwardConfigPb {
+                bind_addr: Some("0.0.0.0:23458".parse::<SocketAddr>().unwrap().into()),
+                dst_addr: Some("10.144.144.3:23457".parse::<SocketAddr>().unwrap().into()),
+                socket_type: SocketType::Tcp as i32,
+            }),
+        }],
+        ..Default::default()
+    };
+    insts[0]
+        .get_config_patcher()
+        .apply_patch(patch)
+        .await
+        .unwrap();
+
+    let mut buf = vec![0; 32];
+    rand::thread_rng().fill(&mut buf[..]);
+    let tcp_listener = TcpTunnelListener::new("tcp://0.0.0.0:23457".parse().unwrap());
+    let tcp_connector = TcpTunnelConnector::new("tcp://127.0.0.1:23458".parse().unwrap());
+    let result = _tunnel_pingpong_netns_with_timeout(
+        tcp_listener,
+        tcp_connector,
+        NetNS::new(Some("net_c".into())),
+        NetNS::new(Some("net_a".into())),
+        buf.clone(),
+        std::time::Duration::from_millis(30000),
+    )
+    .await;
+    assert!(result.is_ok(), "Port forward pingpong should succeed");
 
     drop_insts(insts).await;
 }

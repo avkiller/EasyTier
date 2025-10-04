@@ -305,8 +305,7 @@ impl Socks5ServerNet {
                     tracing::error!("send to smoltcp stack failed: {:?}", e);
                 }
             }
-            tracing::error!("smoltcp stack sink exited");
-            panic!("smoltcp stack sink exited");
+            tracing::warn!("smoltcp stack sink exited");
         });
 
         forward_tasks.spawn(async move {
@@ -327,8 +326,7 @@ impl Socks5ServerNet {
                     tracing::error!("send to peer failed in smoltcp sender: {:?}", e);
                 }
             }
-            tracing::error!("smoltcp stack stream exited");
-            panic!("smoltcp stack stream exited");
+            tracing::warn!("smoltcp stack stream exited");
         });
 
         let interface_config = smoltcp::iface::Config::new(smoltcp::wire::HardwareAddress::Ip);
@@ -450,7 +448,9 @@ impl PeerPacketFilter for Socks5Server {
 
         let entry_key = match ipv4.get_next_level_protocol() {
             IpNextHeaderProtocols::Tcp => {
-                let tcp_packet = TcpPacket::new(ipv4.payload()).unwrap();
+                let Some(tcp_packet) = TcpPacket::new(ipv4.payload()) else {
+                    return Some(packet);
+                };
                 Socks5Entry {
                     dst: SocketAddr::new(ipv4.get_source().into(), tcp_packet.get_source()),
                     src: SocketAddr::new(
@@ -479,7 +479,9 @@ impl PeerPacketFilter for Socks5Server {
                     return Some(packet);
                 }
 
-                let udp_packet = UdpPacket::new(ipv4.payload()).unwrap();
+                let Some(udp_packet) = UdpPacket::new(ipv4.payload()) else {
+                    return Some(packet);
+                };
                 Socks5Entry {
                     dst: SocketAddr::new(ipv4.get_source().into(), udp_packet.get_source()),
                     src: SocketAddr::new(

@@ -8,12 +8,11 @@ use anyhow::Context as _;
 use dashmap::DashMap;
 use easytier::{
     common::{
-        config::{ConfigLoader, NetworkIdentity, PeerConfig, TomlConfigLoader},
+        config::{ConfigFileControl, ConfigLoader, NetworkIdentity, PeerConfig, TomlConfigLoader},
         scoped_task::ScopedTask,
     },
     defer,
     instance_manager::NetworkInstanceManager,
-    launcher::ConfigSource,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::any;
@@ -392,7 +391,7 @@ impl HealthChecker {
                 .delete_network_instance(vec![cfg.get_id()]);
         });
         self.instance_mgr
-            .run_network_instance(cfg.clone(), ConfigSource::FFI)
+            .run_network_instance(cfg.clone(), false, ConfigFileControl::STATIC_CONFIG)
             .with_context(|| "failed to run network instance")?;
 
         let now = Instant::now();
@@ -436,7 +435,7 @@ impl HealthChecker {
         );
 
         self.instance_mgr
-            .run_network_instance(cfg.clone(), ConfigSource::Web)
+            .run_network_instance(cfg.clone(), true, ConfigFileControl::STATIC_CONFIG)
             .with_context(|| "failed to run network instance")?;
         self.inst_id_map.insert(node_id, cfg.get_id());
 

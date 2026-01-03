@@ -21,6 +21,7 @@ use crate::common::scoped_task::ScopedTask;
 use crate::common::PeerId;
 use crate::connector::direct::DirectConnectorManager;
 use crate::connector::manual::{ConnectorManagerRpcService, ManualConnectorManager};
+use crate::connector::tcp_hole_punch::TcpHolePunchConnector;
 use crate::connector::udp_hole_punch::UdpHolePunchConnector;
 use crate::gateway::icmp_proxy::IcmpProxy;
 use crate::gateway::kcp_proxy::{KcpProxyDst, KcpProxyDstRpcService, KcpProxySrc};
@@ -516,6 +517,7 @@ pub struct Instance {
     conn_manager: Arc<ManualConnectorManager>,
     direct_conn_manager: Arc<DirectConnectorManager>,
     udp_hole_puncher: Arc<Mutex<UdpHolePunchConnector>>,
+    tcp_hole_puncher: Arc<Mutex<TcpHolePunchConnector>>,
 
     ip_proxy: Option<IpProxy>,
 
@@ -531,6 +533,8 @@ pub struct Instance {
 
     #[cfg(feature = "socks5")]
     socks5_server: Arc<Socks5Server>,
+
+    proxy_cidrs_monitor: Option<ScopedTask<()>>,
 
     global_ctx: ArcGlobalCtx,
 }
@@ -571,6 +575,7 @@ impl Instance {
         direct_conn_manager.run();
 
         let udp_hole_puncher = UdpHolePunchConnector::new(peer_manager.clone());
+        let tcp_hole_puncher = TcpHolePunchConnector::new(peer_manager.clone());
 
         let peer_center = Arc::new(PeerCenterInstance::new(peer_manager.clone()));
 
@@ -594,6 +599,7 @@ impl Instance {
             conn_manager,
             direct_conn_manager: Arc::new(direct_conn_manager),
             udp_hole_puncher: Arc::new(Mutex::new(udp_hole_puncher)),
+            tcp_hole_puncher: Arc::new(Mutex::new(tcp_hole_puncher)),
 
             ip_proxy: None,
             kcp_proxy_src: None,
@@ -608,6 +614,8 @@ impl Instance {
 
             #[cfg(feature = "socks5")]
             socks5_server,
+
+            proxy_cidrs_monitor: None,
 
             global_ctx,
         }
@@ -949,6 +957,7 @@ impl Instance {
         self.run_ip_proxy().await?;
 
         self.udp_hole_puncher.lock().await.run().await?;
+        self.tcp_hole_puncher.lock().await.run().await?;
 
         self.peer_center.init().await;
         let route_calc = self.peer_center.get_cost_calculator();
@@ -958,6 +967,12 @@ impl Instance {
             .await;
 
         self.add_initial_peers().await?;
+
+        let monitor = super::proxy_cidrs_monitor::ProxyCidrsMonitor::new(
+            self.peer_manager.clone(),
+            self.global_ctx.clone(),
+        );
+        self.proxy_cidrs_monitor = Some(monitor.start());
 
         if self.global_ctx.get_vpn_portal_cidr().is_some() {
             self.run_vpn_portal().await?;

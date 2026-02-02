@@ -72,7 +72,7 @@ message NetworkConfig {
 
   optional bool enable_quic_proxy = 45;
   optional bool disable_quic_input = 46;
-  optional int32 quic_listen_port = 50;
+  optional int32 quic_listen_port = 50 [deprecated = true];
   repeated PortForwardConfig port_forwards = 48;
 
   optional bool disable_sym_hole_punching = 49;
@@ -81,6 +81,8 @@ message NetworkConfig {
   optional common.CompressionAlgoPb data_compress_algo = 52;
   optional string encryption_algorithm = 53;
   optional bool disable_tcp_hole_punching = 54;
+
+  common.SecureModeConfig secure_mode = 55;
 }
 
 message PortForwardConfig {

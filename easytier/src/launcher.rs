@@ -536,6 +536,7 @@ impl NetworkConfig {
                     uri: public_server_url.parse().with_context(|| {
                         format!("failed to parse public server uri: {}", public_server_url)
                     })?,
+                    peer_public_key: None,
                 }]);
             }
             NetworkingMethod::Manual => {
@@ -548,6 +549,7 @@ impl NetworkConfig {
                         uri: peer_url
                             .parse()
                             .with_context(|| format!("failed to parse peer uri: {}", peer_url))?,
+                        peer_public_key: None,
                     });
                 }
 
@@ -673,6 +675,8 @@ impl NetworkConfig {
             ));
         }
 
+        cfg.set_secure_mode(self.secure_mode.clone());
+
         let mut flags = gen_default_flags();
         if let Some(latency_first) = self.latency_first {
             flags.latency_first = latency_first;
@@ -704,10 +708,6 @@ impl NetworkConfig {
 
         if let Some(disable_quic_input) = self.disable_quic_input {
             flags.disable_quic_input = disable_quic_input;
-        }
-
-        if let Some(quic_listen_port) = self.quic_listen_port {
-            flags.quic_listen_port = quic_listen_port as u32;
         }
 
         if let Some(disable_p2p) = self.disable_p2p {
@@ -897,6 +897,8 @@ impl NetworkConfig {
             result.mapped_listeners = mapped_listeners.iter().map(|l| l.to_string()).collect();
         }
 
+        result.secure_mode = config.get_secure_mode();
+
         let flags = config.get_flags();
         result.latency_first = Some(flags.latency_first);
         result.dev_name = Some(flags.dev_name.clone());
@@ -906,7 +908,6 @@ impl NetworkConfig {
         result.disable_kcp_input = Some(flags.disable_kcp_input);
         result.enable_quic_proxy = Some(flags.enable_quic_proxy);
         result.disable_quic_input = Some(flags.disable_quic_input);
-        result.quic_listen_port = Some(flags.quic_listen_port as i32);
         result.disable_p2p = Some(flags.disable_p2p);
         result.p2p_only = Some(flags.p2p_only);
         result.bind_device = Some(flags.bind_device);
@@ -944,7 +945,7 @@ impl NetworkConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::config::ConfigLoader;
+    use crate::{common::config::ConfigLoader, proto::common::SecureModeConfig};
     use rand::Rng;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -1018,7 +1019,10 @@ mod tests {
                 let uri = format!("{}://127.0.0.1:{}", protocol, port)
                     .parse()
                     .unwrap();
-                peers.push(crate::common::config::PeerConfig { uri });
+                peers.push(crate::common::config::PeerConfig {
+                    uri,
+                    peer_public_key: None,
+                });
             }
             config.set_peers(peers);
 
@@ -1138,6 +1142,14 @@ mod tests {
                     mapped_listeners.push(format!("tcp://0.0.0.0:{}", port).parse().unwrap());
                 }
                 config.set_mapped_listeners(Some(mapped_listeners));
+            }
+
+            if rng.gen_bool(0.3) {
+                config.set_secure_mode(Some(SecureModeConfig {
+                    enabled: true,
+                    local_private_key: None,
+                    local_public_key: None,
+                }));
             }
 
             if rng.gen_bool(0.9) {

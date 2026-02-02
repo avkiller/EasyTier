@@ -15,6 +15,8 @@ use crate::proto::api::instance::PeerConnInfo;
 use crate::proto::common::{PeerFeatureFlag, PortForwardConfigPb};
 use crate::proto::peer_rpc::PeerGroupInfo;
 use crossbeam::atomic::AtomicCell;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 use super::{
     config::{ConfigLoader, Flags},
@@ -90,8 +92,6 @@ pub struct GlobalCtx {
 
     feature_flags: AtomicCell<PeerFeatureFlag>,
 
-    quic_proxy_port: AtomicCell<Option<u16>>,
-
     token_bucket_manager: TokenBucketManager,
 
     stats_manager: Arc<StatsManager>,
@@ -120,7 +120,7 @@ impl GlobalCtx {
         let net_ns = NetNS::new(config_fs.get_netns());
         let hostname = config_fs.get_hostname();
 
-        let (event_bus, _) = tokio::sync::broadcast::channel(8);
+        let (event_bus, _) = tokio::sync::broadcast::channel(16);
 
         let stun_info_collector = StunInfoCollector::new_with_default_servers();
 
@@ -147,6 +147,8 @@ impl GlobalCtx {
             kcp_input: !config_fs.get_flags().disable_kcp_input,
             no_relay_kcp: config_fs.get_flags().disable_relay_kcp,
             support_conn_list_sync: true, // Enable selective peer list sync by default
+            quic_input: !config_fs.get_flags().disable_quic_input,
+            no_relay_quic: config_fs.get_flags().disable_relay_quic,
             ..Default::default()
         };
 
@@ -179,7 +181,6 @@ impl GlobalCtx {
             p2p_only,
 
             feature_flags: AtomicCell::new(feature_flags),
-            quic_proxy_port: AtomicCell::new(None),
 
             token_bucket_manager: TokenBucketManager::new(),
 
@@ -266,6 +267,15 @@ impl GlobalCtx {
 
     pub fn get_network_identity(&self) -> NetworkIdentity {
         self.config.get_network_identity()
+    }
+
+    pub fn get_secret_proof(&self, challenge: &[u8]) -> Option<Hmac<Sha256>> {
+        let network_secret = self.get_network_identity().network_secret?;
+        let key = network_secret.as_bytes();
+        let mut mac = Hmac::<Sha256>::new_from_slice(key).unwrap();
+        mac.update(b"easytier secret proof");
+        mac.update(challenge);
+        Some(mac)
     }
 
     pub fn get_network_name(&self) -> String {
@@ -380,15 +390,6 @@ impl GlobalCtx {
 
     pub fn set_feature_flags(&self, flags: PeerFeatureFlag) {
         self.feature_flags.store(flags);
-    }
-
-    pub fn get_quic_proxy_port(&self) -> Option<u16> {
-        self.quic_proxy_port.load()
-    }
-
-    pub fn set_quic_proxy_port(&self, port: Option<u16>) {
-        self.acl_filter.set_quic_udp_port(port.unwrap_or(0));
-        self.quic_proxy_port.store(port);
     }
 
     pub fn token_bucket_manager(&self) -> &TokenBucketManager {

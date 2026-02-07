@@ -24,7 +24,6 @@ use bytes::{BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use derivative::Derivative;
 use derive_more::{Constructor, Deref, DerefMut, From, Into};
-use pnet::packet::ipv4::Ipv4Packet;
 use prost::Message;
 use quinn::udp::{EcnCodepoint, RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, Endpoint, RecvStream, SendStream, StreamId, TokioRuntime, UdpPoller};
@@ -79,10 +78,14 @@ impl UdpPoller for QuicSocketPoller {
         self: Pin<&mut Self>,
         cx: &mut std::task::Context,
     ) -> Poll<std::io::Result<()>> {
-        self.get_mut()
-            .tx
-            .poll_reserve(cx)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))
+        let tx = &mut self.get_mut().tx;
+
+        let poll = tx.poll_reserve(cx);
+        if let Poll::Ready(Ok(_)) = poll {
+            tx.abort_send();
+        }
+
+        poll.map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))
     }
 }
 
@@ -376,7 +379,7 @@ impl NatDstConnector for NatDstQuicConnector {
         _cidr_set: &CidrSet,
         _global_ctx: &GlobalCtx,
         hdr: &PeerManagerHeader,
-        _ipv4: &Ipv4Packet,
+        _ipv4: &Ipv4Addr,
         _real_dst_ip: &mut Ipv4Addr,
     ) -> bool {
         hdr.from_peer_id == hdr.to_peer_id && hdr.is_quic_src_modified()
@@ -401,8 +404,8 @@ impl TcpProxyForWrappedSrcTrait for TcpProxyForQuicSrc {
     }
 
     #[inline]
-    fn set_src_modified(hdr: &mut PeerManagerHeader, modified: bool) -> &mut PeerManagerHeader {
-        hdr.set_quic_src_modified(modified)
+    fn mark_src_modified(hdr: &mut PeerManagerHeader) -> &mut PeerManagerHeader {
+        hdr.mark_quic_src_modified()
     }
 
     #[inline]

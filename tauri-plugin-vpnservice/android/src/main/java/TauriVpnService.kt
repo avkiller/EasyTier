@@ -89,9 +89,9 @@ class TauriVpnService : VpnService() {
         dns?.let { builder.addDnsServer(it) }
 
         for (route in routes) {
-            val ipParts = route.split("/")
-            if (ipParts.size != 2) throw IllegalArgumentException("Invalid route cidr string")
-            builder.addRoute(ipParts[0], ipParts[1].toInt())
+            val routeParts = route.split("/")
+            if (routeParts.size != 2) throw IllegalArgumentException("Invalid route cidr string")
+            builder.addRoute(routeParts[0], routeParts[1].toInt())
         }
         
         for (app in disallowedApplications) {

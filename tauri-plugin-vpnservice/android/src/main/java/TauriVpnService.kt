@@ -27,7 +27,9 @@ class TauriVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         println("vpn on start command ${intent?.getExtras()} $intent")
         var args = intent?.getExtras()
-
+        if (this::vpnInterface.isInitialized) {
+            vpnInterface.close() // 关闭旧接口
+        }   
         vpnInterface = createVpnInterface(args)
         println("vpn created ${vpnInterface.fd}")
 

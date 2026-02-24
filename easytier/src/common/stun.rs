@@ -1106,7 +1106,10 @@ impl StunInfoCollector {
             "txt:stun.easytier.cn",
             "stun.miwifi.com",
             "stun.chat.bilibili.com",
-            "stun.hitv.com",
+            "stun.tencentcloudapi.com",
+            "stun.qq.com",
+            "stun.l.google.com:19302",
+            // "stun.hitv.com",
         ]
         .iter()
         .map(|x| x.to_string())
@@ -1115,13 +1118,14 @@ impl StunInfoCollector {
 
     pub fn get_default_tcp_servers() -> Vec<String> {
         [
-            "stun.hot-chilli.net",
-            "stun.fitauto.ru",
-            "fwa.lifesizecloud.com",
+            // "stun.hot-chilli.net",
+            // "stun.fitauto.ru",
+            // "fwa.lifesizecloud.com",
             "global.turn.twilio.com",
             "turn.cloudflare.com",
-            "stun.voip.blackberry.com",
-            "stun.radiojar.com",
+            "stun.nextcloud.com",
+            // "stun.voip.blackberry.com",
+            // "stun.radiojar.com",
         ]
         .iter()
         .map(|x| x.to_string())
@@ -1129,7 +1133,11 @@ impl StunInfoCollector {
     }
 
     pub fn get_default_servers_v6() -> Vec<String> {
-        ["txt:stun-v6.easytier.cn"]
+        [
+            "txt:stun-v6.easytier.cn",
+            "stun.l.google.com:19302",
+            "stun.cloudflare.com",
+        ]
             .iter()
             .map(|x| x.to_string())
             .collect()

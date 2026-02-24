@@ -33,7 +33,6 @@ android {
             keyPassword = System.getenv("releaseKeyPassword")
         }
     }
-  }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"

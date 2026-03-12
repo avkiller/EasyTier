@@ -29,20 +29,28 @@ const DEFAULT_UDP_STUN_SERVERS: &[&str] = &[
     "txt:stun.easytier.cn",
     "stun.miwifi.com",
     "stun.chat.bilibili.com",
-    "stun.hitv.com",
+    // "stun.hitv.com",
+    "stun.tencentcloudapi.com",
+    "stun.qq.com",
+    "stun.l.google.com:19302",
 ];
 
 const DEFAULT_TCP_STUN_SERVERS: &[&str] = &[
-    "stun.hot-chilli.net",
-    "stun.fitauto.ru",
-    "fwa.lifesizecloud.com",
+    // "stun.hot-chilli.net",
+    // "stun.fitauto.ru",
+    // "fwa.lifesizecloud.com",
     "global.turn.twilio.com",
     "turn.cloudflare.com",
     "stun.voip.blackberry.com",
-    "stun.radiojar.com",
+    // "stun.radiojar.com",
+    "stun.nextcloud.com",
 ];
 
-const DEFAULT_UDP_V6_STUN_SERVERS: &[&str] = &["txt:stun-v6.easytier.cn"];
+const DEFAULT_UDP_V6_STUN_SERVERS: &[&str] = &[
+    "txt:stun-v6.easytier.cn",
+    "stun.l.google.com:19302",
+    "stun.cloudflare.com",
+    ];
 
 struct HostResolverIter {
     hostnames: Vec<String>,

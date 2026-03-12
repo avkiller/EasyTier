@@ -169,6 +169,16 @@ impl WebServerService for SessionRpcService {
         }
         ret
     }
+
+    async fn get_feature(
+        &self,
+        _: BaseController,
+        _: easytier::proto::web::GetFeatureRequest,
+    ) -> rpc_types::error::Result<easytier::proto::web::GetFeatureResponse> {
+        Ok(easytier::proto::web::GetFeatureResponse {
+            support_encryption: true,
+        })
+    }
 }
 
 pub struct Session {
@@ -329,10 +339,14 @@ impl Session {
         self.data.clone()
     }
 
-    pub fn scoped_rpc_client(&self) -> SessionRpcClient {
+    pub fn scoped_client<F: rpc_types::__rt::RpcClientFactory>(&self) -> F::ClientImpl {
         self.rpc_mgr
             .rpc_client()
-            .scoped_client::<WebClientServiceClientFactory<BaseController>>(1, 1, "".to_string())
+            .scoped_client::<F>(1, 1, "".to_string())
+    }
+
+    pub fn scoped_rpc_client(&self) -> SessionRpcClient {
+        self.scoped_client::<WebClientServiceClientFactory<BaseController>>()
     }
 
     pub async fn get_token(&self) -> Option<StorageToken> {

@@ -1137,16 +1137,6 @@ impl StunInfoCollector {
                 .map(ToString::to_string)
                 .collect()
         }
-        if cfg!(test) {
-            Vec::new()
-        } else {
-            // NOTICE: we may need to choose stun server based on geolocation
-            // stun server cross nation may return an external ip address with high latency and loss rate
-            DEFAULT_UDP_STUN_SERVERS
-                .iter()
-                .map(ToString::to_string)
-                .collect()
-        }
     }
 
     pub fn get_default_tcp_servers() -> Vec<String> {
@@ -1159,26 +1149,9 @@ impl StunInfoCollector {
                 .map(ToString::to_string)
                 .collect()
         }
-        // if test, return empty vector
-        if cfg!(test) {
-            Vec::new()
-        } else {
-            DEFAULT_TCP_STUN_SERVERS
-                .iter()
-                .map(ToString::to_string)
-                .collect()
-        }
     }
 
     pub fn get_default_servers_v6() -> Vec<String> {
-        if cfg!(test) {
-            Vec::new()
-        } else {
-            DEFAULT_UDP_V6_STUN_SERVERS
-                .iter()
-                .map(ToString::to_string)
-                .collect()
-        }
         if cfg!(test) {
             Vec::new()
         } else {
@@ -1383,14 +1356,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_udp_nat_type_detector() {
-        let collector = StunInfoCollector::new(
-            DEFAULT_UDP_STUN_SERVERS
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-            vec![],
-            vec![],
-        );
         let collector = StunInfoCollector::new(
             DEFAULT_UDP_STUN_SERVERS
                 .iter()

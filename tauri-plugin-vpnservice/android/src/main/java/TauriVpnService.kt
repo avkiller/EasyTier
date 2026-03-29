@@ -33,6 +33,10 @@ class TauriVpnService : VpnService() {
         ipv4Addr = args?.getString(IPV4_ADDR)
         routes = args?.getStringArray(ROUTES) ?: emptyArray()
         dns = args?.getString(DNS)
+        
+        if (this::vpnInterface.isInitialized) {
+            vpnInterface.close() // 关闭旧接口
+        }   
 
         vpnInterface = createVpnInterface(args)
         println("vpn created ${vpnInterface.fd}")

@@ -8,7 +8,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use dashmap::DashMap;
-use futures::{stream::FuturesUnordered, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt, stream::FuturesUnordered};
 use rand::{Rng, SeedableRng};
 use zerocopy::{AsBytes, FromBytes};
 
@@ -19,20 +19,20 @@ use tokio::{
     task::JoinSet,
 };
 
-use tracing::{instrument, Instrument};
+use tracing::{Instrument, instrument};
 
 use super::{
-    common::{setup_sokcet2, setup_sokcet2_ext, wait_for_connect_futures},
-    packet_def::{UDPTunnelHeader, V6HolePunchPacket, UDP_TUNNEL_HEADER_SIZE},
-    ring::{RingSink, RingStream},
     FromUrl, IpVersion, Tunnel, TunnelConnCounter, TunnelError, TunnelInfo, TunnelListener,
     TunnelUrl,
+    common::{setup_socket2, setup_socket2_ext, wait_for_connect_futures},
+    packet_def::{UDP_TUNNEL_HEADER_SIZE, UDPTunnelHeader, V6HolePunchPacket},
+    ring::{RingSink, RingStream},
 };
 use crate::{
     common::{join_joinset_background, scoped_task::ScopedTask, shrink_dashmap},
     tunnel::{
         build_url_from_socket_addr,
-        common::{reserve_buf, TunnelWrapper},
+        common::{TunnelWrapper, reserve_buf},
         packet_def::{UdpPacketType, ZCPacket, ZCPacketType},
         ring::RingTunnel,
     },
@@ -150,8 +150,8 @@ async fn respond_stun_packet(
     use crate::common::stun_codec_ext::*;
     use bytecodec::{DecodeExt as _, EncodeExt as _};
     use stun_codec::{
-        rfc5389::{attributes::XorMappedAddress, methods::BINDING},
         Message, MessageClass, MessageDecoder, MessageEncoder,
+        rfc5389::{attributes::XorMappedAddress, methods::BINDING},
     };
 
     let mut decoder = MessageDecoder::<Attribute>::new();
@@ -545,9 +545,9 @@ impl TunnelListener for UdpTunnelListener {
 
         let tunnel_url: TunnelUrl = self.addr.clone().into();
         if let Some(bind_dev) = tunnel_url.bind_dev() {
-            setup_sokcet2_ext(&socket2_socket, &addr, Some(bind_dev))?;
+            setup_socket2_ext(&socket2_socket, &addr, Some(bind_dev), true)?;
         } else {
-            setup_sokcet2(&socket2_socket, &addr)?;
+            setup_socket2(&socket2_socket, &addr, true)?;
         }
 
         self.socket = Some(Arc::new(UdpSocket::from_std(socket2_socket.into())?));
@@ -838,7 +838,7 @@ impl UdpTunnelConnector {
                 socket2::Type::DGRAM,
                 Some(socket2::Protocol::UDP),
             )?;
-            if let Err(e) = setup_sokcet2(&socket2_socket, bind_addr) {
+            if let Err(e) = setup_socket2(&socket2_socket, bind_addr, true) {
                 tracing::error!(bind_addr = ?bind_addr, ?addr, "bind addr fail: {:?}", e);
                 continue;
             }
@@ -884,11 +884,11 @@ mod tests {
     use crate::{
         common::global_ctx::tests::get_mock_global_ctx,
         tunnel::{
+            TunnelConnector,
             common::{
                 get_interface_name_by_ip,
                 tests::{_tunnel_bench, _tunnel_echo_server, _tunnel_pingpong, wait_for_condition},
             },
-            TunnelConnector,
         },
     };
 
@@ -1040,7 +1040,7 @@ mod tests {
                 Some(socket2::Protocol::UDP),
             )
             .unwrap();
-            setup_sokcet2_ext(&socket2_socket, &addr, bind_dev.clone()).unwrap();
+            setup_socket2_ext(&socket2_socket, &addr, bind_dev.clone(), true).unwrap();
         }
     }
 

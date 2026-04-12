@@ -3,10 +3,10 @@ use std::{
     net::{IpAddr, SocketAddr},
     pin::Pin,
     sync::{Arc, Mutex},
-    task::{ready, Poll},
+    task::{Poll, ready},
 };
 
-use futures::{stream::FuturesUnordered, Future, Sink, Stream};
+use futures::{Future, Sink, Stream, stream::FuturesUnordered};
 use network_interface::NetworkInterfaceConfig as _;
 use pin_project_lite::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -18,12 +18,12 @@ use zerocopy::FromBytes as _;
 
 use super::TunnelInfo;
 
-use crate::tunnel::packet_def::{ZCPacket, PEER_MANAGER_HEADER_SIZE};
+use crate::tunnel::packet_def::{PEER_MANAGER_HEADER_SIZE, ZCPacket};
 
 use super::{
-    buf::BufList,
-    packet_def::{TCPTunnelHeader, ZCPacketType, TCP_TUNNEL_HEADER_SIZE},
     SinkItem, StreamItem, Tunnel, TunnelError, ZCPacketSink, ZCPacketStream,
+    buf::BufList,
+    packet_def::{TCP_TUNNEL_HEADER_SIZE, TCPTunnelHeader, ZCPacketType},
 };
 
 pub struct TunnelWrapper<R, W> {
@@ -344,10 +344,11 @@ pub(crate) fn get_interface_name_by_ip(local_ip: &IpAddr) -> Option<String> {
     None
 }
 
-pub(crate) fn setup_sokcet2_ext(
+pub(crate) fn setup_socket2_ext(
     socket2_socket: &socket2::Socket,
     bind_addr: &SocketAddr,
     #[allow(unused_variables)] bind_dev: Option<String>,
+    only_v6: bool,
 ) -> Result<(), TunnelError> {
     #[cfg(target_os = "windows")]
     {
@@ -356,7 +357,7 @@ pub(crate) fn setup_sokcet2_ext(
     }
 
     if bind_addr.is_ipv6() {
-        socket2_socket.set_only_v6(true)?;
+        socket2_socket.set_only_v6(only_v6)?;
     }
 
     socket2_socket.set_nonblocking(true)?;
@@ -428,14 +429,16 @@ where
     Err(last_err.unwrap_or(TunnelError::Shutdown))
 }
 
-pub(crate) fn setup_sokcet2(
+pub(crate) fn setup_socket2(
     socket2_socket: &socket2::Socket,
     bind_addr: &SocketAddr,
+    only_v6: bool,
 ) -> Result<(), TunnelError> {
-    setup_sokcet2_ext(
+    setup_socket2_ext(
         socket2_socket,
         bind_addr,
         super::common::get_interface_name_by_ip(&bind_addr.ip()),
+        only_v6,
     )
 }
 
@@ -454,7 +457,7 @@ pub mod tests {
 
     use crate::{
         common::netns::NetNS,
-        tunnel::{packet_def::ZCPacket, TunnelConnector, TunnelListener},
+        tunnel::{TunnelConnector, TunnelListener, packet_def::ZCPacket},
     };
 
     pub async fn _tunnel_echo_server(tunnel: Box<dyn super::Tunnel>, once: bool) {

@@ -1,14 +1,14 @@
 use std::net::SocketAddr;
 
 use super::{FromUrl, TunnelInfo};
-use crate::tunnel::common::setup_sokcet2;
+use crate::tunnel::common::setup_socket2;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
 use super::{
-    common::{wait_for_connect_futures, FramedReader, FramedWriter, TunnelWrapper},
     IpVersion, Tunnel, TunnelError, TunnelListener,
+    common::{FramedReader, FramedWriter, TunnelWrapper, wait_for_connect_futures},
 };
 
 const TCP_MTU_BYTES: usize = 2000;
@@ -66,7 +66,7 @@ impl TunnelListener for TcpTunnelListener {
             socket2::Type::STREAM,
             Some(socket2::Protocol::TCP),
         )?;
-        setup_sokcet2(&socket2_socket, &addr)?;
+        setup_socket2(&socket2_socket, &addr, true)?;
         let socket = TcpSocket::from_std_stream(socket2_socket.into());
 
         if let Err(e) = socket.set_nodelay(true) {
@@ -175,7 +175,7 @@ impl TcpTunnelConnector {
                 Some(socket2::Protocol::TCP),
             )?;
 
-            if let Err(e) = setup_sokcet2(&socket2_socket, bind_addr) {
+            if let Err(e) = setup_socket2(&socket2_socket, bind_addr, true) {
                 tracing::error!(bind_addr = ?bind_addr, ?addr, "bind addr fail: {:?}", e);
                 continue;
             }
@@ -216,8 +216,8 @@ impl super::TunnelConnector for TcpTunnelConnector {
 #[cfg(test)]
 mod tests {
     use crate::tunnel::{
-        common::tests::{_tunnel_bench, _tunnel_pingpong},
         TunnelConnector,
+        common::tests::{_tunnel_bench, _tunnel_pingpong},
     };
 
     use super::*;

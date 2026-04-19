@@ -6,6 +6,9 @@ on:
   # pull_request:
   #   branches: ["develop", "main"]
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,7 +23,6 @@ jobs:
     # continue-on-error: true # Uncomment once integration is finished
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # Map a step output to a job output
     outputs:
       # do not skip push on branch starts with releases/
@@ -33,7 +35,6 @@ jobs:
           concurrent_skipping: 'same_content_newer'
           skip_after_successful_duplicate: 'true'
           cancel_others: 'true'
-          paths: '["Cargo.toml", "Cargo.lock", "easytier/**", ".github/workflows/core.yml", ".github/actions/**", "easytier-web/**"]'
           paths: '["Cargo.toml", "Cargo.lock", "easytier/**", ".github/workflows/core.yml", ".github/actions/**", "easytier-web/**"]'
   build_web:
     runs-on: ubuntu-latest
@@ -56,69 +57,63 @@ jobs:
   build:
     strategy:
       fail-fast: true
-      fail-fast: true
       matrix:
         include:
           - TARGET: x86_64-unknown-linux-musl
             OS: ubuntu-24.04
             ARTIFACT_NAME: linux-x86_64
-          - TARGET: x86_64-unknown-linux-musl
-            OS: ubuntu-24.04
-            ARTIFACT_NAME: linux-x86_64
           - TARGET: aarch64-unknown-linux-musl
             OS: ubuntu-24.04-arm
-            OS: ubuntu-24.04-arm
             ARTIFACT_NAME: linux-aarch64
-          - TARGET: x86_64-unknown-linux-musl
-            OS: ubuntu-22.04
-            ARTIFACT_NAME: linux-x86_64
-          # - TARGET: riscv64gc-unknown-linux-musl
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-riscv64
-          # - TARGET: mips-unknown-linux-musl
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-mips
-          # - TARGET: mipsel-unknown-linux-musl
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-mipsel
-          # - TARGET: armv7-unknown-linux-musleabihf # raspberry pi 2-3-4, not tested
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-armv7hf
-          # - TARGET: armv7-unknown-linux-musleabi # raspberry pi 2-3-4, not tested
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-armv7
-          # - TARGET: arm-unknown-linux-musleabihf # raspberry pi 0-1, not tested
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-armhf
-          # - TARGET: arm-unknown-linux-musleabi # raspberry pi 0-1, not tested
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: linux-arm
 
+          # - TARGET: riscv64gc-unknown-linux-musl
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-riscv64
           # - TARGET: loongarch64-unknown-linux-musl
           #   OS: ubuntu-24.04
           #   ARTIFACT_NAME: linux-loongarch64
 
+          # - TARGET: armv7-unknown-linux-musleabihf # raspberry pi 2-3-4, not tested
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-armv7hf
+          # - TARGET: armv7-unknown-linux-musleabi # raspberry pi 2-3-4, not tested
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-armv7
+          # - TARGET: arm-unknown-linux-musleabihf # raspberry pi 0-1, not tested
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-armhf
+          # - TARGET: arm-unknown-linux-musleabi # raspberry pi 0-1, not tested
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-arm
+
+          # - TARGET: mips-unknown-linux-musl
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-mips
+          # - TARGET: mipsel-unknown-linux-musl
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: linux-mipsel
+
+          # - TARGET: x86_64-unknown-freebsd
+          #   OS: ubuntu-24.04
+          #   ARTIFACT_NAME: freebsd-13.2-x86_64
+          #   BSD_VERSION: 13.2
+
           # - TARGET: x86_64-apple-darwin
           #   OS: macos-latest
           #   ARTIFACT_NAME: macos-x86_64
-          - TARGET: aarch64-apple-darwin
-            OS: macos-latest
-            ARTIFACT_NAME: macos-aarch64
+          # - TARGET: aarch64-apple-darwin
+          #   OS: macos-latest
+          #   ARTIFACT_NAME: macos-aarch64
 
           - TARGET: x86_64-pc-windows-msvc
             OS: windows-latest
             ARTIFACT_NAME: windows-x86_64
-          # - TARGET: aarch64-pc-windows-msvc
-          #   OS: windows-latest
-          #   ARTIFACT_NAME: windows-arm64
           # - TARGET: i686-pc-windows-msvc
           #   OS: windows-latest
           #   ARTIFACT_NAME: windows-i686
-
-          # - TARGET: x86_64-unknown-freebsd
-          #   OS: ubuntu-22.04
-          #   ARTIFACT_NAME: freebsd-13.2-x86_64
-          #   BSD_VERSION: 13.2
+          # - TARGET: aarch64-pc-windows-msvc
+          #   OS: windows-11-arm
+          #   ARTIFACT_NAME: windows-arm64
 
     runs-on: ${{ matrix.OS }}
     env:
@@ -151,14 +146,6 @@ jobs:
           pnpm: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare build environment
-        uses: ./.github/actions/prepare-build
-        with:
-          target: ${{ matrix.TARGET }}
-          gui: true
-          pnpm: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: Swatinem/rust-cache@v2
         with:
           # The prefix cache key, this can be changed to start a new cache manually.
@@ -172,57 +159,38 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         if: ${{ contains(matrix.OS, 'ubuntu') }}
-      - uses: mlugg/setup-zig@v2
-        if: ${{ contains(matrix.OS, 'ubuntu') }}
-
-      - uses: taiki-e/install-action@v2
-        if: ${{ contains(matrix.OS, 'ubuntu') }}
         with:
           tool: cargo-zigbuild
-          tool: cargo-zigbuild
 
-      - name: Build Core & Cli
-        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
-        run: |
-          bash ./.github/workflows/install_rust.sh
-
-          # loongarch need llvm-18
-          if [[ $TARGET =~ ^loongarch.*$ ]]; then
-            sudo apt-get install -qq llvm-18 clang-18
-            export LLVM_CONFIG_PATH=/usr/lib/llvm-18/bin/llvm-config
-          fi
-          # we set the sysroot when sysroot is a dir
-          # this dir is a soft link generated by install_rust.sh
-          # kcp-sys need this to gen ffi bindings. without this clang may fail to find some libc headers such as bits/libc-header-start.h
-          if [[ -d "./musl_gcc/sysroot" ]]; then
-            export BINDGEN_EXTRA_CLANG_ARGS=--sysroot=$(readlink -f ./musl_gcc/sysroot)
-          fi
-
-          if [[ $OS =~ ^ubuntu.*$ && $TARGET =~ ^mips.*$ ]]; then
-            cargo +nightly-2026-02-02 build -r --target $TARGET -Z build-std=std,panic_abort --package=easytier --features=jemalloc
+      - name: Build
+        if: ${{ !contains(matrix.TARGET, 'mips') }}
+        run: |          
+          if [[ "$TARGET" == *windows* ]]; then
+            SUFFIX=.exe
           else
-            if [[ $OS =~ ^windows.*$ ]]; then
-              SUFFIX=.exe
-              CORE_FEATURES="--features=mimalloc"
-            elif [[ $TARGET =~ ^riscv64.*$ || $TARGET =~ ^loongarch64.*$ || $TARGET =~ ^aarch64.*$ ]]; then
-              CORE_FEATURES="--features=mimalloc"
-            else
-              CORE_FEATURES="--features=jemalloc"
-            fi
-            cargo build --release --target $TARGET --package=easytier-web --features=embed
-            mv ./target/$TARGET/release/easytier-web"$SUFFIX" ./target/$TARGET/release/easytier-web-embed"$SUFFIX"
-            cargo build --release --target $TARGET $CORE_FEATURES
+            SUFFIX=""
           fi
 
-      # Copied and slightly modified from @lmq8267 (https://github.com/lmq8267)
-      - name: Build Core & Cli (X86_64 FreeBSD)
-        if: false
-        uses: vmactions/freebsd-vm@670398e4236735b8b65805c3da44b7a511fb8b27
-        # if: ${{ endsWith(matrix.TARGET, 'freebsd') }}
+          if [[ "$TARGET" =~ (x86_64-unknown-linux-musl|aarch64-unknown-linux-musl|windows|darwin) ]]; then
+            BUILD=build
+          else
+            BUILD=zigbuild
+          fi
+
+          if [[ "$TARGET" =~ ^(riscv64|loongarch64|aarch64).*$ || "$TARGET" =~ windows ]]; then
+            FEATURES="mimalloc"
+          else
+            FEATURES="jemalloc"
+          fi
+          
+          cargo $BUILD --release --target $TARGET --package=easytier-web --features=embed
+          mv ./target/$TARGET/release/easytier-web"$SUFFIX" ./target/$TARGET/release/easytier-web-embed"$SUFFIX"
+          
+          cargo $BUILD --release --target $TARGET --features=$FEATURES
+
+      - name: Build (MIPS)
+        if: ${{ contains(matrix.TARGET, 'mips') }}
         env:
-          RUSTC_BOOTSTRAP: 1
-        run: |
-          cargo build -r --target $TARGET -Z build-std=std,panic_abort --package=easytier --features=jemalloc
           RUSTC_BOOTSTRAP: 1
         run: |
           cargo build -r --target $TARGET -Z build-std=std,panic_abort --package=easytier --features=jemalloc
@@ -230,7 +198,6 @@ jobs:
       - name: Compress
         run: |
           mkdir -p ./artifacts/objects/
-
 
           # windows is the only OS using a different convention for executable file name
           if [[ $OS =~ ^windows.*$ ]]; then
@@ -244,7 +211,6 @@ jobs:
                   find "easytier/third_party/${ARCH_DIR}" -maxdepth 1 -type f \( -name "*.dll" -o -name "*.sys" \) -exec cp {} ./artifacts/objects/ \;
               fi
           fi
-
 
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
             TAG=$GITHUB_REF_NAME
@@ -265,31 +231,8 @@ jobs:
             curl -L "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${UPX_PKG}.tar.xz" -s | tar xJvf -
             cp "${UPX_PKG}/upx" .
             UPX_BIN=./upx
-          
-          if [[ $OS =~ ^ubuntu.*$ && ! $TARGET =~ (loongarch|freebsd) ]]; then
-            HOST_ARCH=$(uname -m)
-            case $HOST_ARCH in
-              x86_64)  UPX_ARCH="amd64" ;;
-              aarch64) UPX_ARCH="arm64" ;;
-              *)       UPX_ARCH="amd64" ;;
-            esac
-
-            UPX_VERSION=5.1.1
-            UPX_PKG="upx-${UPX_VERSION}-${UPX_ARCH}_linux"
-            curl -L "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${UPX_PKG}.tar.xz" -s | tar xJvf -
-            cp "${UPX_PKG}/upx" .
-            UPX_BIN=./upx
           fi
 
-          for BIN in ./target/$TARGET/release/easytier-{core,cli,web,web-embed}"$SUFFIX"; do
-            if [[ -f "$BIN" ]]; then
-              if [[ -n "$UPX_BIN" ]]; then
-                $UPX_BIN --lzma --best "$BIN" || true
-              fi
-
-              mv "$BIN" ./artifacts/objects/
-            fi
-          done
           for BIN in ./target/$TARGET/release/easytier-{core,cli,web,web-embed}"$SUFFIX"; do
             if [[ -f "$BIN" ]]; then
               if [[ -n "$UPX_BIN" ]]; then
@@ -310,22 +253,8 @@ jobs:
           path: |
             ./artifacts/*
 
-  core-result:
+  build_magisk:
     runs-on: ubuntu-latest
-    needs: [ pre_job, build_web, build ]
-    if: needs.pre_job.result == 'success' && needs.pre_job.outputs.should_skip != 'true' && !cancelled()
-    needs: [ pre_job, build_web, build ]
-    if: needs.pre_job.result == 'success' && needs.pre_job.outputs.should_skip != 'true' && !cancelled()
-    steps:
-      - name: Mark result as failed
-        if: contains(needs.*.result, 'failure')
-        if: contains(needs.*.result, 'failure')
-        run: exit 1
-
-  magisk_build:
-    runs-on: ubuntu-latest
-    needs: [ pre_job, build_web, build ]
-    if: needs.pre_job.result == 'success' && needs.pre_job.outputs.should_skip != 'true' && !cancelled()
     needs: [ pre_job, build_web, build ]
     if: needs.pre_job.result == 'success' && needs.pre_job.outputs.should_skip != 'true' && !cancelled()
     steps:
@@ -357,15 +286,6 @@ jobs:
             !./easytier-contrib/easytier-magisk/build.sh
             !./easytier-contrib/easytier-magisk/magisk_update.json
           if-no-files-found: error
-
-  core-result:
-    runs-on: ubuntu-latest
-    needs: [ pre_job, build_web, build, build_magisk ]
-    if: needs.pre_job.result == 'success' && needs.pre_job.outputs.should_skip != 'true' && !cancelled()
-    steps:
-      - name: Mark result as failed
-        if: contains(needs.*.result, 'failure')
-        run: exit 1
 
   core-result:
     runs-on: ubuntu-latest

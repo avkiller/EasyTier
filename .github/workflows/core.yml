@@ -33,7 +33,7 @@ jobs:
           concurrent_skipping: 'same_content_newer'
           skip_after_successful_duplicate: 'true'
           cancel_others: 'true'
-          paths: '["Cargo.toml", "Cargo.lock", "easytier/**", ".github/workflows/core.yml", ".github/workflows/install_rust.sh", "easytier-web/**"]'
+          paths: '["Cargo.toml", "Cargo.lock", "easytier/**", ".github/workflows/core.yml", ".github/actions/**", "easytier-web/**"]'
   build_web:
     runs-on: ubuntu-latest
     needs: pre_job
@@ -58,8 +58,11 @@ jobs:
       fail-fast: true
       matrix:
         include:
+          - TARGET: x86_64-unknown-linux-musl
+            OS: ubuntu-24.04
+            ARTIFACT_NAME: linux-x86_64
           - TARGET: aarch64-unknown-linux-musl
-            OS: ubuntu-22.04
+            OS: ubuntu-24.04-arm
             ARTIFACT_NAME: linux-aarch64
           - TARGET: x86_64-unknown-linux-musl
             OS: ubuntu-22.04
@@ -135,8 +138,15 @@ jobs:
           name: easytier-web-dashboard
           path: easytier-web/frontend/dist/
 
+      - name: Prepare build environment
+        uses: ./.github/actions/prepare-build
+        with:
+          target: ${{ matrix.TARGET }}
+          gui: true
+          pnpm: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: Swatinem/rust-cache@v2
-        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
         with:
           # The prefix cache key, this can be changed to start a new cache manually.
           # default: "v0-rust"
@@ -144,11 +154,13 @@ jobs:
           shared-key: "core-registry"
           cache-targets: "false"
 
-      - name: Setup protoc
-        uses: arduino/setup-protoc@v3
+      - uses: mlugg/setup-zig@v2
+        if: ${{ contains(matrix.OS, 'ubuntu') }}
+
+      - uses: taiki-e/install-action@v2
+        if: ${{ contains(matrix.OS, 'ubuntu') }}
         with:
-          # GitHub repo token to use to avoid rate limiter
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-zigbuild
 
       - name: Build Core & Cli
         if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
@@ -189,52 +201,14 @@ jobs:
         uses: vmactions/freebsd-vm@670398e4236735b8b65805c3da44b7a511fb8b27
         # if: ${{ endsWith(matrix.TARGET, 'freebsd') }}
         env:
-          TARGET: ${{ matrix.TARGET }}
-        with:
-          envs: TARGET
-          release: ${{ matrix.BSD_VERSION }}
-          arch: x86_64
-          usesh: true
-          mem: 6144
-          cpu: 4
-          run: |
-            uname -a
-            echo $SHELL
-            pwd
-            ls -lah
-            whoami
-            env | sort
-
-            pkg install -y git protobuf llvm-devel sudo curl
-            curl --proto 'https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            . $HOME/.cargo/env
-
-            rustup set auto-self-update disable
-
-            rustup install 1.93
-            rustup default 1.93
-
-            export CC=clang
-            export CXX=clang++
-            export CARGO_TERM_COLOR=always
-
-            cargo build --release --verbose --target $TARGET --package=easytier-web --features=embed
-            mv ./target/$TARGET/release/easytier-web ./target/$TARGET/release/easytier-web-embed
-            cargo build --release --verbose --target $TARGET --features=mimalloc
-
-            mkdir -p built-bins/$TARGET/release/
-            mv ./target/$TARGET/release/easytier-web-embed ./built-bins/$TARGET/release/easytier-web-embed
-            mv ./target/$TARGET/release/easytier-web ./built-bins/$TARGET/release/easytier-web
-            mv ./target/$TARGET/release/easytier-core ./built-bins/$TARGET/release/easytier-core
-            mv ./target/$TARGET/release/easytier-cli ./built-bins/$TARGET/release/easytier-cli
-
-            # remove dirs to avoid copy many files back
-            rm -rf ./target ~/.cargo
-            mv ./built-bins ./target
+          RUSTC_BOOTSTRAP: 1
+        run: |
+          cargo build -r --target $TARGET -Z build-std=std,panic_abort --package=easytier --features=jemalloc
 
       - name: Compress
         run: |
           mkdir -p ./artifacts/objects/
+
           # windows is the only OS using a different convention for executable file name
           if [[ $OS =~ ^windows.*$ ]]; then
               SUFFIX=.exe
@@ -247,26 +221,37 @@ jobs:
                   find "easytier/third_party/${ARCH_DIR}" -maxdepth 1 -type f \( -name "*.dll" -o -name "*.sys" \) -exec cp {} ./artifacts/objects/ \;
               fi
           fi
+
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
             TAG=$GITHUB_REF_NAME
           else
             TAG=$GITHUB_SHA
           fi
+          
+          if [[ $OS =~ ^ubuntu.*$ && ! $TARGET =~ (loongarch|freebsd) ]]; then
+            HOST_ARCH=$(uname -m)
+            case $HOST_ARCH in
+              x86_64)  UPX_ARCH="amd64" ;;
+              aarch64) UPX_ARCH="arm64" ;;
+              *)       UPX_ARCH="amd64" ;;
+            esac
 
-          if [[ $OS =~ ^ubuntu.*$ && ! $TARGET =~ ^.*freebsd$ && ! $TARGET =~ ^loongarch.*$ && ! $TARGET =~ ^riscv64.*$ ]]; then
-            UPX_VERSION=4.2.4
-            curl -L https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz -s | tar xJvf -
-            cp upx-${UPX_VERSION}-amd64_linux/upx .
-            ./upx --lzma --best ./target/$TARGET/release/easytier-core"$SUFFIX"
-            ./upx --lzma --best ./target/$TARGET/release/easytier-cli"$SUFFIX"
+            UPX_VERSION=5.1.1
+            UPX_PKG="upx-${UPX_VERSION}-${UPX_ARCH}_linux"
+            curl -L "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${UPX_PKG}.tar.xz" -s | tar xJvf -
+            cp "${UPX_PKG}/upx" .
+            UPX_BIN=./upx
           fi
 
-          mv ./target/$TARGET/release/easytier-core"$SUFFIX" ./artifacts/objects/
-          mv ./target/$TARGET/release/easytier-cli"$SUFFIX" ./artifacts/objects/
-          if [[ ! $TARGET =~ ^mips.*$ ]]; then
-            mv ./target/$TARGET/release/easytier-web"$SUFFIX" ./artifacts/objects/
-            mv ./target/$TARGET/release/easytier-web-embed"$SUFFIX" ./artifacts/objects/
-          fi
+          for BIN in ./target/$TARGET/release/easytier-{core,cli,web,web-embed}"$SUFFIX"; do
+            if [[ -f "$BIN" ]]; then
+              if [[ -n "$UPX_BIN" ]]; then
+                $UPX_BIN --lzma --best "$BIN" || true
+              fi
+
+              mv "$BIN" ./artifacts/objects/
+            fi
+          done
 
           mv ./artifacts/objects/* ./artifacts/
           rm -rf ./artifacts/objects/
@@ -315,7 +300,6 @@ jobs:
           cp ./downloaded-binaries/easytier-cli ./easytier-contrib/easytier-magisk/
           cp ./downloaded-binaries/easytier-web ./easytier-contrib/easytier-magisk/
 
-
       # 上传生成的模块
       - name: Upload Magisk Module
         uses: actions/upload-artifact@v5
@@ -326,3 +310,12 @@ jobs:
             !./easytier-contrib/easytier-magisk/build.sh
             !./easytier-contrib/easytier-magisk/magisk_update.json
           if-no-files-found: error
+
+  core-result:
+    runs-on: ubuntu-latest
+    needs: [ pre_job, build_web, build, build_magisk ]
+    if: needs.pre_job.result == 'success' && needs.pre_job.outputs.should_skip != 'true' && !cancelled()
+    steps:
+      - name: Mark result as failed
+        if: contains(needs.*.result, 'failure')
+        run: exit 1

@@ -3500,6 +3500,26 @@ impl Route for PeerRoute {
         routes
     }
 
+    async fn list_proxy_cidrs(&self) -> BTreeSet<Ipv4Cidr> {
+        self.service_impl
+            .route_table
+            .cidr_peer_id_map
+            .load()
+            .iter()
+            .map(|(cidr, _)| *cidr)
+            .collect()
+    }
+
+    async fn list_proxy_cidrs_v6(&self) -> BTreeSet<Ipv6Cidr> {
+        self.service_impl
+            .route_table
+            .cidr_v6_peer_id_map
+            .load()
+            .iter()
+            .map(|(cidr, _)| *cidr)
+            .collect()
+    }
+
     async fn get_peer_id_by_ipv4(&self, ipv4_addr: &Ipv4Addr) -> Option<PeerId> {
         let route_table = &self.service_impl.route_table;
         if let Some(p) = route_table.ipv4_peer_id_map.get(ipv4_addr) {
@@ -4372,9 +4392,9 @@ mod tests {
 
         // find the smallest peer_id, which should be a center node
         let mut all_route = [r_a.clone(), r_b.clone(), r_c.clone(), r_d.clone()];
-        all_route.sort_by(|a, b| a.my_peer_id.cmp(&b.my_peer_id));
+        all_route.sort_by_key(|r| r.my_peer_id);
         let mut all_peer_mgr = [p_a.clone(), p_b.clone(), p_c.clone(), p_d.clone()];
-        all_peer_mgr.sort_by_key(|a| a.my_peer_id());
+        all_peer_mgr.sort_by_key(|p| p.my_peer_id());
 
         wait_for_condition(
             || async { all_route[0].service_impl.sessions.len() == 3 },

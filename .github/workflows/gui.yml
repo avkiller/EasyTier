@@ -33,6 +33,7 @@ jobs:
           skip_after_successful_duplicate: 'true'
           cancel_others: 'true'
           paths: '["Cargo.toml", "Cargo.lock", "easytier/**", "easytier-gui/**", ".github/workflows/gui.yml", ".github/actions/**", "easytier-web/frontend-lib/**"]'
+          paths: '["Cargo.toml", "Cargo.lock", "easytier/**", "easytier-gui/**", ".github/workflows/gui.yml", ".github/actions/**", "easytier-web/frontend-lib/**"]'
   build-gui:
     strategy:
       fail-fast: true
@@ -43,7 +44,12 @@ jobs:
             OS: ubuntu-24.04
             GUI_TARGET: x86_64-unknown-linux-gnu
             ARTIFACT_NAME: linux-x86_64
+          - TARGET: x86_64-unknown-linux-musl
+            OS: ubuntu-24.04
+            GUI_TARGET: x86_64-unknown-linux-gnu
+            ARTIFACT_NAME: linux-x86_64
           - TARGET: aarch64-unknown-linux-musl
+            OS: ubuntu-24.04-arm
             OS: ubuntu-24.04-arm
             GUI_TARGET: aarch64-unknown-linux-gnu
             ARTIFACT_NAME: linux-aarch64
@@ -100,6 +106,14 @@ jobs:
           pnpm: true
           pnpm-build-filter: ''
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prepare build environment
+        uses: ./.github/actions/prepare-build
+        with:
+          target: ${{ matrix.TARGET }}
+          gui: true
+          pnpm: true
+          pnpm-build-filter: ''
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -108,8 +122,11 @@ jobs:
           prefix-key: ""
           shared-key: "gui-registry"
           cache-targets: "false"
+          shared-key: "gui-registry"
+          cache-targets: "false"
 
       - name: copy correct DLLs
+        if: ${{ contains(matrix.GUI_TARGET, 'windows') }}
         if: ${{ contains(matrix.GUI_TARGET, 'windows') }}
         run: |
           case $TARGET in
@@ -127,7 +144,9 @@ jobs:
         with:
           projectPath: ./easytier-gui
           args: --verbose --target ${{ matrix.GUI_TARGET }}
+          args: --verbose --target ${{ matrix.GUI_TARGET }}
 
+      - name: Collect artifact
       - name: Collect artifact
         run: |
           mkdir -p ./artifacts/objects/
@@ -138,14 +157,19 @@ jobs:
             TAG=$GITHUB_SHA
           fi
 
+
           # copy gui bundle, gui is built without specific target
+          if [[ $GUI_TARGET =~ windows ]]; then
           if [[ $GUI_TARGET =~ windows ]]; then
               mv ./target/$GUI_TARGET/release/bundle/nsis/*.exe ./artifacts/objects/
           elif [[ $GUI_TARGET =~ darwin ]]; then
+          elif [[ $GUI_TARGET =~ darwin ]]; then
               mv ./target/$GUI_TARGET/release/bundle/dmg/*.dmg ./artifacts/objects/
+          elif [[ $GUI_TARGET =~ linux ]]; then
           elif [[ $GUI_TARGET =~ linux ]]; then
               mv ./target/$GUI_TARGET/release/bundle/deb/*.deb ./artifacts/objects/
               mv ./target/$GUI_TARGET/release/bundle/rpm/*.rpm ./artifacts/objects/
+              mv ./target/$GUI_TARGET/release/bundle/appimage/*.AppImage ./artifacts/objects/
               mv ./target/$GUI_TARGET/release/bundle/appimage/*.AppImage ./artifacts/objects/
           fi
 

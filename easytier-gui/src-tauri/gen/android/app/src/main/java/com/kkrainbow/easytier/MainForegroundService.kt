@@ -25,7 +25,7 @@ class MainForegroundService : Service() {
         createNotificationChannel()
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("easytier Running")
-            .setContentText("easytier is available on localhost")
+            .setContentText("Easytier is available")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .build()
        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

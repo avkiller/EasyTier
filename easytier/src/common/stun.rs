@@ -284,7 +284,6 @@ impl StunClient {
         let stun_host = self.stun_server;
         // repeat req in case of packet loss
         let mut tids = vec![];
-
         for _ in 0..self.req_repeat {
             let tid = rand::random::<u32>();
             // let tid = 1;
@@ -920,6 +919,10 @@ impl TcpNatTypeDetector {
 pub trait StunInfoCollectorTrait: Send + Sync {
     fn get_stun_info(&self) -> StunInfo;
     async fn get_udp_port_mapping(&self, local_port: u16) -> Result<SocketAddr, Error>;
+    async fn get_udp_port_mapping_with_socket(
+        &self,
+        udp: Arc<UdpSocket>,
+    ) -> Result<SocketAddr, Error>;
     async fn get_tcp_port_mapping(&self, local_port: u16) -> Result<SocketAddr, Error>;
 }
 
@@ -983,6 +986,14 @@ impl StunInfoCollectorTrait for StunInfoCollector {
     }
 
     async fn get_udp_port_mapping(&self, local_port: u16) -> Result<SocketAddr, Error> {
+        let udp = Arc::new(UdpSocket::bind(format!("0.0.0.0:{}", local_port)).await?);
+        self.get_udp_port_mapping_with_socket(udp).await
+    }
+
+    async fn get_udp_port_mapping_with_socket(
+        &self,
+        udp: Arc<UdpSocket>,
+    ) -> Result<SocketAddr, Error> {
         self.start_stun_routine();
 
         let mut stun_servers = self
@@ -1008,7 +1019,6 @@ impl StunInfoCollectorTrait for StunInfoCollector {
             return Err(Error::NotFound);
         }
 
-        let udp = Arc::new(UdpSocket::bind(format!("0.0.0.0:{}", local_port)).await?);
         let mut client_builder = StunClientBuilder::new(udp.clone());
 
         for server in stun_servers.iter() {
@@ -1324,6 +1334,13 @@ impl StunInfoCollectorTrait for MockStunInfoCollector {
         Ok(format!("127.0.0.1:{}", port).parse().unwrap())
     }
 
+    async fn get_udp_port_mapping_with_socket(
+        &self,
+        udp: Arc<UdpSocket>,
+    ) -> Result<std::net::SocketAddr, Error> {
+        self.get_udp_port_mapping(udp.local_addr()?.port()).await
+    }
+
     async fn get_tcp_port_mapping(&self, mut port: u16) -> Result<std::net::SocketAddr, Error> {
         if port == 0 {
             port = 40144;
@@ -1334,11 +1351,9 @@ impl StunInfoCollectorTrait for MockStunInfoCollector {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        common::scoped_task::ScopedTask,
-        tunnel::{TunnelListener, udp::UdpTunnelListener},
-    };
+    use crate::tunnel::{TunnelListener, udp::UdpTunnelListener};
     use tokio::time::{sleep, timeout};
+    use tokio_util::task::AbortOnDropHandle;
 
     use super::*;
 
@@ -1432,7 +1447,7 @@ mod tests {
         use stun_codec::rfc5389::attributes::XorMappedAddress;
         use tokio::net::TcpListener;
 
-        async fn spawn_tcp_stun_server() -> (SocketAddr, ScopedTask<()>) {
+        async fn spawn_tcp_stun_server() -> (SocketAddr, AbortOnDropHandle<()>) {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let server_addr = listener.local_addr().unwrap();
 
@@ -1456,7 +1471,7 @@ mod tests {
                 stream.write_all(rsp_buf.as_slice()).await.unwrap();
             });
 
-            (server_addr, task.into())
+            (server_addr, AbortOnDropHandle::new(task))
         }
 
         let (server1, _t1) = spawn_tcp_stun_server().await;
@@ -1495,7 +1510,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();
 
-        let _t = ScopedTask::from(tokio::spawn(async move {
+        let _t = AbortOnDropHandle::new(tokio::spawn(async move {
             for _ in 0..8 {
                 let Ok((mut stream, peer_addr)) = listener.accept().await else {
                     break;

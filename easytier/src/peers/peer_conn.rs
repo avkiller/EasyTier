@@ -12,6 +12,7 @@ use std::{
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use guarden::guard;
 use hmac::Mac;
 use prost::Message;
 
@@ -40,7 +41,6 @@ use crate::{
         error::Error,
         global_ctx::ArcGlobalCtx,
     },
-    guard,
     peers::peer_session::{PeerSessionStore, SessionKey, UpsertResponderSessionReturn},
     proto::{
         api::instance::{PeerConnInfo, PeerConnStats},
@@ -1352,7 +1352,9 @@ impl PeerConn {
 
         let is_foreign_network = conn_info_for_instrument.network_name
             != self.global_ctx.get_network_identity().network_name;
-        let recv_limiter = if is_foreign_network {
+        let recv_limiter = if is_foreign_network
+            && self.global_ctx.get_flags().foreign_relay_bps_limit != u64::MAX
+        {
             let relay_network_bps_limit = self.global_ctx.get_flags().foreign_relay_bps_limit;
             let limiter_config = LimiterConfig {
                 burst_rate: None,

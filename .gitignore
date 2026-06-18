@@ -46,3 +46,5 @@ easytier-gui/src-tauri/*.sys
 
 # contrib
 go.sum
+
+EasyTier.code-workspace

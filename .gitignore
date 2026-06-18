@@ -43,4 +43,8 @@ easytier-gui/src-tauri/*.sys
 
 .direnv
 .flake-profile
+
+# contrib
+go.sum
+
 EasyTier.code-workspace

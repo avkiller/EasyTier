@@ -27,7 +27,7 @@ use super::dns::resolve_txt_record;
 use super::stun_codec_ext::*;
 
 const DEFAULT_UDP_STUN_SERVERS: &[&str] = &[
-    "txt:stun.easytier.cn",
+    //"txt:stun.easytier.cn",
     "stun.miwifi.com",
     "stun.chat.bilibili.com",
     "stun.fuxudong.com",
@@ -49,9 +49,10 @@ const DEFAULT_TCP_STUN_SERVERS: &[&str] = &[
 ];
 
 const DEFAULT_UDP_V6_STUN_SERVERS: &[&str] = &[
-    "txt:stun-v6.easytier.cn",
+    //"txt:stun-v6.easytier.cn",
     "stun.l.google.com:19302",
     "stun.cloudflare.com",
+    "stun.fuxudong.com",
     ];
 
 struct HostResolverIter {

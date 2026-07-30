@@ -146,7 +146,7 @@ jobs:
       - uses: taiki-e/install-action@nextest
 
       - name: Download tests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tests
 

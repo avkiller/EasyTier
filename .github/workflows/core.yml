@@ -49,7 +49,7 @@ jobs:
           build-filter: './easytier-web/*'
 
       - name: Archive artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: easytier-web-dashboard
           path: |
@@ -250,7 +250,7 @@ jobs:
           rm -rf ./artifacts/objects/
 
       - name: Archive artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: easytier-${{ matrix.ARTIFACT_NAME }}
           path: |
@@ -281,7 +281,7 @@ jobs:
 
       # 上传生成的模块
       - name: Upload Magisk Module
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: Easytier-Magisk
           path: |

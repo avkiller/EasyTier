@@ -81,7 +81,7 @@ jobs:
     needs: pre_job
     if: needs.pre_job.outputs.should_skip != 'true'    
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set current ref as env variable
         run: |
@@ -227,7 +227,7 @@ jobs:
           rm -rf ./artifacts/objects/
 
       - name: Archive artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: easytier-gui-${{ matrix.ARTIFACT_NAME }}
           path: |

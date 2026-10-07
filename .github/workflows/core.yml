@@ -284,7 +284,8 @@ jobs:
             ./artifacts/*
 
       - name: Prepare SignPath test artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
+        if: false
+        # if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
         run: |
           mkdir -p ./signpath-artifacts
           cp \
@@ -295,7 +296,8 @@ jobs:
             ./signpath-artifacts/
 
       - name: Upload unsigned SignPath test artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
+        if: false
+        # if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
         id: signpath-upload
         uses: actions/upload-artifact@v5
         with:
@@ -304,7 +306,8 @@ jobs:
           if-no-files-found: error
 
       - name: Submit SignPath test-signing request
-        if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
+        if: false
+        # if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -317,7 +320,8 @@ jobs:
           output-artifact-directory: ./signpath-signed-artifacts
 
       - name: Upload signed SignPath test artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
+        if: false
+        # if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.TARGET, 'windows') }}
         uses: actions/upload-artifact@v5
         with:
           name: signpath-signed-${{ matrix.ARTIFACT_NAME }}

@@ -49,6 +49,6 @@ easytier-gui/src-tauri/*.sys
 
 # contrib
 go.sum
-
+.test-env/
 EasyTier.code-workspace
 tauri-plugin-vpnservice/android/.gradle/

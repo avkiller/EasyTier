@@ -628,6 +628,57 @@ mod portable_runtime {
         );
     }
 
+    #[cfg(feature = "dhcp-ipv6")]
+    #[tokio::test]
+    async fn runtime_update_preserves_dhcp_owned_ipv6() {
+        let mut initial = test_config("dhcp-runtime-update");
+        initial.connectivity.runtime.dhcp_ipv6 = true;
+        let instance = build_instance(initial).unwrap();
+        let lease = IpPrefix {
+            address: "fd12::7".parse().unwrap(),
+            prefix_len: 64,
+        };
+        instance.runtime_config.update_peer_with(|peer| {
+            peer.runtime.core.routes.ipv6 = Some(lease.clone());
+        });
+
+        let mut replacement = test_config("dhcp-runtime-update");
+        replacement.connectivity.runtime.dhcp_ipv6 = true;
+        instance
+            .update_runtime_config(runtime_snapshot(&replacement))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            instance
+                .runtime_config
+                .snapshot()
+                .peer
+                .runtime
+                .core
+                .routes
+                .ipv6,
+            Some(lease)
+        );
+
+        let static_replacement = test_config("dhcp-runtime-update");
+        instance
+            .update_runtime_config(runtime_snapshot(&static_replacement))
+            .await
+            .unwrap();
+        assert_eq!(
+            instance
+                .runtime_config
+                .snapshot()
+                .peer
+                .runtime
+                .core
+                .routes
+                .ipv6,
+            None
+        );
+    }
+
     #[tokio::test]
     async fn core_instance_is_a_direct_managed_record() {
         let instance = build_instance(test_config("managed-directly")).unwrap();
@@ -831,6 +882,88 @@ network_secret = "network-secret"
         .unwrap_err();
 
         assert!(error.to_string().contains("instance is not ready"));
+    }
+
+    #[cfg(feature = "management")]
+    #[tokio::test]
+    async fn manual_route_patch_preserves_empty_mode_without_restart() {
+        use easytier_proto::api::config::{ConfigPatchAction, InstanceConfigPatch, RoutePatch};
+
+        let (packet_sink, _packet_receiver) = tokio::sync::mpsc::channel(16);
+        let config = TomlConfig::new_from_str(
+            "[network_identity]\nnetwork_name = 'manual-routes'\nnetwork_secret = 'secret'",
+        )
+        .unwrap();
+        let instance =
+            CoreInstance::from_toml(config, adapters(None, Arc::new(packet_sink))).unwrap();
+        instance.start().await.unwrap();
+        let peer_id = instance.peer_id();
+        let persistence = RecordingConfigPatchPersistence {
+            writes: std::sync::Mutex::new(Vec::new()),
+            fail: AtomicBool::new(true),
+        };
+        let route: cidr::Ipv4Cidr = "10.20.0.0/24".parse().unwrap();
+        let add = RoutePatch {
+            action: ConfigPatchAction::Add as i32,
+            cidr: Some("10.20.0.0/24".parse::<cidr::Ipv4Inet>().unwrap().into()),
+        };
+        let clear = RoutePatch {
+            action: ConfigPatchAction::Clear as i32,
+            ..Default::default()
+        };
+        let failed = crate::management::apply_config_patch(
+            &instance,
+            InstanceConfigPatch {
+                enable_manual_routes: Some(true),
+                routes: vec![add],
+                ..Default::default()
+            },
+            Some(&persistence),
+        )
+        .await;
+        assert!(failed.is_err());
+        assert_eq!(instance.toml_config().unwrap().get_routes(), None);
+        assert_eq!(
+            instance.runtime_config.snapshot().services.manual_routes,
+            None
+        );
+        assert!(persistence.writes.lock().unwrap().is_empty());
+        persistence.fail.store(false, Ordering::Relaxed);
+
+        for (mode, patches, expected) in [
+            (Some(true), Vec::new(), Some(Vec::new())),
+            (Some(true), vec![add], Some(vec![route])),
+            (Some(true), vec![clear], Some(Vec::new())),
+            (Some(false), Vec::new(), None),
+            // Released callers that omit the new mode keep their old behavior.
+            (None, vec![add], Some(vec![route])),
+            (None, vec![clear], None),
+        ] {
+            crate::management::apply_config_patch(
+                &instance,
+                InstanceConfigPatch {
+                    enable_manual_routes: mode,
+                    routes: patches,
+                    ..Default::default()
+                },
+                Some(&persistence),
+            )
+            .await
+            .unwrap();
+            assert_eq!(instance.toml_config().unwrap().get_routes(), expected);
+            assert_eq!(
+                instance.runtime_config.snapshot().services.manual_routes,
+                expected
+                    .as_ref()
+                    .map(|routes| routes.iter().copied().collect())
+            );
+            let writes = persistence.writes.lock().unwrap();
+            let persisted = TomlConfig::new_from_str(writes.last().unwrap()).unwrap();
+            assert_eq!(persisted.get_routes(), expected);
+            assert_eq!(instance.peer_id(), peer_id);
+            assert_eq!(instance.state(), CoreInstanceState::Running);
+        }
+        instance.stop().await;
     }
 
     #[cfg(feature = "management")]
@@ -1332,7 +1465,7 @@ virtual_ip = "10.82.0.2/24"
             async fn prepare(
                 &self,
                 _packet_plane: Arc<CorePacketPlane>,
-            ) -> anyhow::Result<Option<Arc<dyn DhcpIpv4Host>>> {
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
                 Ok(None)
             }
 
@@ -1366,7 +1499,7 @@ virtual_ip = "10.82.0.2/24"
             async fn prepare(
                 &self,
                 _packet_plane: Arc<CorePacketPlane>,
-            ) -> anyhow::Result<Option<Arc<dyn DhcpIpv4Host>>> {
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
                 anyhow::bail!("host prepare failed")
             }
 
@@ -1477,7 +1610,7 @@ virtual_ip = "10.82.0.2/24"
             async fn prepare(
                 &self,
                 _packet_plane: Arc<CorePacketPlane>,
-            ) -> anyhow::Result<Option<Arc<dyn DhcpIpv4Host>>> {
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
                 self.prepare_started.notify_one();
                 self.prepare_release.notified().await;
                 Ok(None)
@@ -1513,6 +1646,162 @@ virtual_ip = "10.82.0.2/24"
         assert_eq!(runtime_host.shutdown_calls.load(Ordering::Relaxed), 1);
     }
 
+    #[test]
+    fn host_executor_routes_lifecycle_and_cancelled_start() {
+        struct ExecutorRuntimeHost {
+            handle: tokio::runtime::Handle,
+            block_prepare: bool,
+            prepare_started: Notify,
+            shutdown_calls: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl InstanceRuntimeHost for ExecutorRuntimeHost {
+            fn runtime_handle(&self) -> Option<tokio::runtime::Handle> {
+                Some(self.handle.clone())
+            }
+
+            async fn prepare(
+                &self,
+                _packet_plane: Arc<CorePacketPlane>,
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
+                assert_eq!(tokio::runtime::Handle::current().id(), self.handle.id());
+                self.prepare_started.notify_one();
+                if self.block_prepare {
+                    std::future::pending::<()>().await;
+                }
+                Ok(None)
+            }
+
+            async fn shutdown(&self) {
+                assert_eq!(tokio::runtime::Handle::current().id(), self.handle.id());
+                self.shutdown_calls.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        for block_prepare in [false, true] {
+            let executor = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap();
+            let caller = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let runtime_host = Arc::new(ExecutorRuntimeHost {
+                handle: executor.handle().clone(),
+                block_prepare,
+                prepare_started: Notify::new(),
+                shutdown_calls: AtomicUsize::new(0),
+            });
+            let instance = {
+                let _runtime = executor.enter();
+                let (packet_sink, _packet_receiver) = tokio::sync::mpsc::channel(16);
+                let mut adapters = adapters(None, Arc::new(packet_sink));
+                adapters.instance_runtime = runtime_host.clone();
+                CoreInstance::new(test_config("host-executor"), adapters).unwrap()
+            };
+            caller.block_on(async {
+                if block_prepare {
+                    let start = tokio::spawn({
+                        let instance = instance.clone();
+                        async move { instance.start().await }
+                    });
+                    tokio::time::timeout(
+                        Duration::from_secs(2),
+                        runtime_host.prepare_started.notified(),
+                    )
+                    .await
+                    .unwrap();
+                    start.abort();
+                    assert!(start.await.unwrap_err().is_cancelled());
+                } else {
+                    instance.start().await.unwrap();
+                    assert_eq!(instance.state(), CoreInstanceState::Running);
+                    instance.stop().await;
+                }
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while instance.state() != CoreInstanceState::Stopped {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+                .expect("lifecycle cleanup must complete on the Host executor");
+                assert_eq!(runtime_host.shutdown_calls.load(Ordering::Relaxed), 1);
+            });
+        }
+    }
+
+    #[test]
+    fn cancelled_stop_before_executor_poll_still_finishes_cleanup() {
+        struct ExecutorRuntimeHost {
+            handle: tokio::runtime::Handle,
+            shutdown_calls: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl InstanceRuntimeHost for ExecutorRuntimeHost {
+            fn runtime_handle(&self) -> Option<tokio::runtime::Handle> {
+                Some(self.handle.clone())
+            }
+
+            async fn prepare(
+                &self,
+                _packet_plane: Arc<CorePacketPlane>,
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
+                Ok(None)
+            }
+
+            async fn shutdown(&self) {
+                assert_eq!(tokio::runtime::Handle::current().id(), self.handle.id());
+                self.shutdown_calls.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        let executor = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let runtime_host = Arc::new(ExecutorRuntimeHost {
+            handle: executor.handle().clone(),
+            shutdown_calls: AtomicUsize::new(0),
+        });
+        let instance = {
+            let _runtime = executor.enter();
+            let (packet_sink, _packet_receiver) = tokio::sync::mpsc::channel(16);
+            let mut adapters = adapters(None, Arc::new(packet_sink));
+            adapters.instance_runtime = runtime_host.clone();
+            CoreInstance::new(test_config("cancel-stop-before-poll"), adapters).unwrap()
+        };
+        executor.block_on(instance.start()).unwrap();
+        assert_eq!(instance.state(), CoreInstanceState::Running);
+
+        let caller = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        caller.block_on(async {
+            // The instance executor is not driven here, so the dispatched stop
+            // cannot be polled before its caller is cancelled.
+            let mut stop = Box::pin(instance.stop());
+            assert!(futures::poll!(&mut stop).is_pending());
+            drop(stop);
+        });
+        drop(caller);
+
+        executor.block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while instance.state() != CoreInstanceState::Stopped {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .expect("cancelled stop must still finish on the instance executor");
+        });
+        assert_eq!(runtime_host.shutdown_calls.load(Ordering::Relaxed), 1);
+    }
+
     #[cfg(feature = "management")]
     #[tokio::test]
     async fn cancelled_delete_finishes_stop_and_keeps_wait_blocked() {
@@ -1542,7 +1831,7 @@ virtual_ip = "10.82.0.2/24"
             async fn prepare(
                 &self,
                 _packet_plane: Arc<CorePacketPlane>,
-            ) -> anyhow::Result<Option<Arc<dyn DhcpIpv4Host>>> {
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
                 Ok(None)
             }
 
@@ -1832,7 +2121,7 @@ virtual_ip = "10.82.0.2/24"
             async fn prepare(
                 &self,
                 _packet_plane: Arc<CorePacketPlane>,
-            ) -> anyhow::Result<Option<Arc<dyn DhcpIpv4Host>>> {
+            ) -> anyhow::Result<Option<Arc<dyn DhcpHost>>> {
                 Ok(None)
             }
 
@@ -2692,6 +2981,268 @@ virtual_ip = "10.82.0.2/24"
         assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 0);
     }
 
+    #[cfg(all(feature = "management", feature = "proxy-smoltcp-stack"))]
+    mod port_forward_reload {
+        use super::*;
+        use easytier_proto::api::config::{
+            ConfigPatchAction, InstanceConfigPatch, PortForwardPatch,
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::sync::mpsc::UnboundedReceiver;
+
+        fn forward(bind_port: u16, destination_port: u16) -> PortForwardConfig {
+            PortForwardConfig {
+                bind_addr: SocketAddr::from(([127, 0, 0, 1], bind_port)),
+                dst_addr: SocketAddr::from(([10, 144, 0, 2], destination_port)),
+                proto: "tcp".to_owned(),
+            }
+        }
+
+        async fn start() -> (
+            Arc<CoreInstance<TestHost>>,
+            Arc<TestHost>,
+            UnboundedReceiver<(SocketAddr, tokio::io::DuplexStream)>,
+        ) {
+            let (connections, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let host = Arc::new(TestHost {
+                port_forward_connections: Some(connections),
+                tcp_listeners: Some(Arc::new(std::sync::Mutex::new(Default::default()))),
+                ..Default::default()
+            });
+            let config =
+                TomlConfig::new_from_str("instance_name = \"port-forward-reload\"").unwrap();
+            config.set_port_forwards(vec![forward(19491, 19381)]);
+            let (packet_sink, _packet_receiver) = tokio::sync::mpsc::channel(16);
+            let instance = CoreInstance::from_toml(
+                config,
+                adapters_with_host(host.clone(), None, Arc::new(packet_sink)),
+            )
+            .unwrap();
+            instance.start().await.unwrap();
+            (instance, host, receiver)
+        }
+
+        async fn assert_destination(
+            host: &TestHost,
+            receiver: &mut UnboundedReceiver<(SocketAddr, tokio::io::DuplexStream)>,
+            config: &PortForwardConfig,
+        ) -> (tokio::io::DuplexStream, tokio::io::DuplexStream) {
+            let mut incoming = host.connect_to_listener(config.bind_addr);
+            let outgoing = tokio::time::timeout(Duration::from_secs(2), async {
+                let (destination, mut outgoing) = receiver.recv().await.unwrap();
+                assert_eq!(destination, config.dst_addr);
+                incoming.write_all(b"request").await.unwrap();
+                let mut data = [0; 7];
+                outgoing.read_exact(&mut data).await.unwrap();
+                assert_eq!(&data, b"request");
+                outgoing
+            })
+            .await
+            .expect("port forward must accept and forward to its committed destination");
+            (incoming, outgoing)
+        }
+
+        fn patch(
+            removed: &[PortForwardConfig],
+            added: &[PortForwardConfig],
+        ) -> InstanceConfigPatch {
+            InstanceConfigPatch {
+                port_forwards: removed
+                    .iter()
+                    .map(|config| (ConfigPatchAction::Remove, config))
+                    .chain(added.iter().map(|config| (ConfigPatchAction::Add, config)))
+                    .map(|(action, config)| PortForwardPatch {
+                        action: action as i32,
+                        cfg: Some(config.clone().into()),
+                    })
+                    .collect(),
+                ..Default::default()
+            }
+        }
+
+        fn persistence(fail: bool) -> RecordingConfigPatchPersistence {
+            RecordingConfigPatchPersistence {
+                writes: std::sync::Mutex::new(Vec::new()),
+                fail: AtomicBool::new(fail),
+            }
+        }
+
+        #[tokio::test]
+        async fn destination_changes_reuse_listener() {
+            let (instance, host, mut connections) = start().await;
+            let (mut established_client, mut established_destination) =
+                assert_destination(&host, &mut connections, &forward(19491, 19381)).await;
+            let initial_binds = host.tcp_binds.load(Ordering::Relaxed);
+
+            for port in [19382, 19383, 19381] {
+                let config = forward(19491, port);
+                let mut runtime = (*instance.runtime_config.snapshot()).clone();
+                runtime.services.gateway.port_forwards = vec![config.clone()];
+                instance.update_runtime_config(runtime).await.unwrap();
+
+                assert_eq!(host.tcp_binds.load(Ordering::Relaxed), initial_binds);
+                assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 1);
+                assert_destination(&host, &mut connections, &config).await;
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    let payload = port.to_be_bytes();
+                    established_client.write_all(&payload).await.unwrap();
+                    let mut received = [0; 2];
+                    established_destination
+                        .read_exact(&mut received)
+                        .await
+                        .unwrap();
+                    assert_eq!(received, payload);
+                    established_destination.write_all(&payload).await.unwrap();
+                    established_client.read_exact(&mut received).await.unwrap();
+                    assert_eq!(received, payload);
+                })
+                .await
+                .expect("changing the destination must preserve established TCP connections");
+            }
+            instance.stop().await;
+        }
+
+        #[tokio::test]
+        async fn failed_runtime_bind_keeps_committed_snapshot() {
+            let (instance, host, mut connections) = start().await;
+            let original = forward(19491, 19381);
+            let rejected = forward(19492, 19382);
+            *host.reject_tcp_bind.lock().unwrap() = Some(rejected.bind_addr);
+            let mut runtime = (*instance.runtime_config.snapshot()).clone();
+            runtime.services.gateway.port_forwards = vec![original.clone(), rejected];
+
+            assert!(
+                instance
+                    .update_runtime_config(runtime.clone())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                instance
+                    .runtime_config
+                    .snapshot()
+                    .services
+                    .gateway
+                    .port_forwards,
+                std::slice::from_ref(&original)
+            );
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 1);
+            assert_destination(&host, &mut connections, &original).await;
+
+            *host.reject_tcp_bind.lock().unwrap() = None;
+            instance.update_runtime_config(runtime).await.unwrap();
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 2);
+            instance.stop().await;
+        }
+
+        #[tokio::test]
+        async fn failed_patch_bind_releases_prepared_listener_and_retries() {
+            let (instance, host, mut connections) = start().await;
+            let original = forward(19491, 19381);
+            let added = [forward(19492, 19382), forward(19493, 19383)];
+            let before = instance.toml_config().unwrap().dump();
+            let persistence = persistence(false);
+            let patch = patch(&[], &added);
+            *host.reject_tcp_bind.lock().unwrap() = Some(added[1].bind_addr);
+            let initial_binds = host.tcp_binds.load(Ordering::Relaxed);
+
+            let error =
+                crate::management::apply_config_patch(&instance, patch.clone(), Some(&persistence))
+                    .await
+                    .unwrap_err();
+
+            assert!(error.to_string().contains("test host rejected TCP bind"));
+            assert_eq!(host.tcp_binds.load(Ordering::Relaxed), initial_binds + 2);
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 1);
+            assert_eq!(instance.toml_config().unwrap().dump(), before);
+            assert_eq!(
+                instance
+                    .runtime_config
+                    .snapshot()
+                    .services
+                    .gateway
+                    .port_forwards,
+                std::slice::from_ref(&original)
+            );
+            assert!(persistence.writes.lock().unwrap().is_empty());
+            assert_destination(&host, &mut connections, &original).await;
+
+            *host.reject_tcp_bind.lock().unwrap() = None;
+            crate::management::apply_config_patch(&instance, patch, Some(&persistence))
+                .await
+                .unwrap();
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 3);
+            assert_eq!(persistence.writes.lock().unwrap().len(), 1);
+            for config in &added {
+                assert_destination(&host, &mut connections, config).await;
+            }
+            instance.stop().await;
+        }
+
+        #[tokio::test]
+        async fn failed_patch_persistence_keeps_destination_and_releases_prepared_listener() {
+            let (instance, host, mut connections) = start().await;
+            let original = forward(19491, 19381);
+            let replacement = forward(19491, 19382);
+            let added = forward(19492, 19383);
+            let before = instance.toml_config().unwrap().dump();
+            let persistence = persistence(true);
+            let patch = patch(
+                std::slice::from_ref(&original),
+                &[replacement.clone(), added.clone()],
+            );
+
+            let error =
+                crate::management::apply_config_patch(&instance, patch.clone(), Some(&persistence))
+                    .await
+                    .unwrap_err();
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("injected config persistence failure")
+            );
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 1);
+            assert_eq!(instance.toml_config().unwrap().dump(), before);
+            assert_eq!(
+                instance
+                    .runtime_config
+                    .snapshot()
+                    .services
+                    .gateway
+                    .port_forwards,
+                std::slice::from_ref(&original)
+            );
+            assert!(persistence.writes.lock().unwrap().is_empty());
+            assert_destination(&host, &mut connections, &original).await;
+
+            persistence.fail.store(false, Ordering::Relaxed);
+            crate::management::apply_config_patch(&instance, patch, Some(&persistence))
+                .await
+                .unwrap();
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 2);
+            assert_eq!(persistence.writes.lock().unwrap().len(), 1);
+            assert_destination(&host, &mut connections, &replacement).await;
+            assert_destination(&host, &mut connections, &added).await;
+            instance.stop().await;
+        }
+
+        #[tokio::test]
+        async fn removed_listener_can_be_rebound_immediately() {
+            let (instance, host, mut connections) = start().await;
+            let original = (*instance.runtime_config.snapshot()).clone();
+            let mut empty = original.clone();
+            empty.services.gateway.port_forwards.clear();
+
+            instance.update_runtime_config(empty).await.unwrap();
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 0);
+            instance.update_runtime_config(original).await.unwrap();
+            assert_eq!(host.active_tcp_listeners.load(Ordering::Relaxed), 1);
+            assert_destination(&host, &mut connections, &forward(19491, 19381)).await;
+            instance.stop().await;
+        }
+    }
+
     #[cfg(feature = "proxy-packet")]
     #[tokio::test]
     async fn runtime_core_instance_owns_wrapped_transport_source_nat() {
@@ -3194,6 +3745,52 @@ virtual_ip = "10.82.0.2/24"
         assert!(start_result.is_err());
         assert_eq!(instance.state(), CoreInstanceState::Stopped);
         assert_eq!(state.drop_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn foreign_direct_rpc_tracks_running_listeners() {
+        use crate::{
+            connectivity::direct::DirectConnectorRpcHandler,
+            proto::{
+                peer_rpc::{DirectConnectorRpc, GetIpListRequest},
+                rpc_types::controller::BaseController,
+            },
+        };
+
+        let mut config = test_config("foreign-listeners");
+        config.connectivity.listeners = Some(ListenerRuntimeConfig::new(
+            vec!["tcp://0.0.0.0:0".parse().unwrap()],
+            false,
+            SocketContext::default(),
+        ));
+        let instance = build_instance(config).unwrap();
+        let handler = DirectConnectorRpcHandler::new_for_foreign_network_with_stun(
+            Arc::new(TestHost::default()),
+            instance.running_listeners.clone(),
+            SocketContext::default(),
+            None,
+        );
+        let advertised_listeners = || async {
+            handler
+                .get_ip_list(BaseController::default(), GetIpListRequest {})
+                .await
+                .unwrap()
+                .listeners
+                .into_iter()
+                .map(Url::from)
+                .collect::<Vec<_>>()
+        };
+
+        assert!(advertised_listeners().await.is_empty());
+        instance.start().await.unwrap();
+        assert!(
+            instance
+                .running_listeners()
+                .contains(&"tcp://0.0.0.0:20000".parse().unwrap())
+        );
+        assert_eq!(advertised_listeners().await, instance.running_listeners());
+        instance.stop().await;
+        assert!(advertised_listeners().await.is_empty());
     }
 
     #[tokio::test]
